@@ -209,3 +209,96 @@ print("✅ Member 3 Phase 2 Complete!")
 print("Member 1 can now import:")
 print("   from database import memory_tools")
 print("Then add: tools=memory_tools  to Tech_Lead agent")
+
+# ====================== PHASE 3: ADVANCED FEATURES & POLISH ======================
+
+def list_all_projects() -> str:
+    """List all unique project_keys in memory (useful for Tech Lead)"""
+    try:
+        docs = db.collection("project_memory").stream()
+        projects = set()
+        for doc in docs:
+            data = doc.to_dict()
+            if "project_key" in data:
+                projects.add(data["project_key"])
+        
+        if not projects:
+            return "No projects found in memory yet."
+        
+        output = "📋 AVAILABLE PROJECTS IN MEMORY:\n"
+        output += "=" * 50 + "\n"
+        for p in sorted(projects):
+            output += f"• {p}\n"
+        return output
+    except Exception as e:
+        return f"❌ Error listing projects: {str(e)}"
+
+
+def clear_project_memory(project_key: str, category: str = None) -> str:
+    """Delete memory for a specific project or category"""
+    try:
+        query = db.collection("project_memory").where("project_key", "==", project_key)
+        if category:
+            query = query.where("category", "==", category)
+        
+        docs = query.stream()
+        deleted_count = 0
+        for doc in docs:
+            doc.reference.delete()
+            deleted_count += 1
+        
+        return f"🗑️ Deleted {deleted_count} documents for project: {project_key}"
+    except Exception as e:
+        return f"❌ Clear Error: {str(e)}"
+
+
+def get_memory_summary(project_key: str) -> str:
+    """Get a clean summary of all categories for a project"""
+    try:
+        docs = db.collection("project_memory").where("project_key", "==", project_key)\
+                .order_by("timestamp", direction=firestore.Query.DESCENDING).stream()
+        
+        summary = {}
+        for doc in docs:
+            data = doc.to_dict()
+            cat = data["category"]
+            if cat not in summary:
+                summary[cat] = data["value"]
+        
+        output = f"📊 MEMORY SUMMARY FOR: {project_key}\n"
+        output += "=" * 50 + "\n"
+        for cat, val in summary.items():
+            output += f"• {cat.upper()}: {val[:120]}{'...' if len(val) > 120 else ''}\n"
+        return output
+    except Exception as e:
+        return f"❌ Summary Error: {str(e)}"
+
+
+# ====================== IMPROVED ERROR HANDLING ======================
+
+def safe_save_project_context(project_key: str, category: str, value: str, notes: str = "") -> str:
+    """Safe version with retry (recommended for agents)"""
+    for attempt in range(3):
+        try:
+            return save_project_context(project_key, category, value, notes)
+        except Exception as e:
+            if attempt == 2:
+                return f"❌ Failed after 3 attempts: {str(e)}"
+            import time
+            time.sleep(1)
+
+
+# ====================== FINAL EXPORTS ======================
+memory_tools_phase3 = [
+    save_project_context_tool,
+    retrieve_context_tool,
+    log_agent_action_tool,
+    log_run_history_tool,
+    list_all_projects,
+    clear_project_memory,
+    get_memory_summary
+]
+
+print("✅ Member 3 Phase 3 Complete!")
+print("Advanced tools added: list_all_projects, clear_project_memory, get_memory_summary")
+print("Use memory_tools_phase3 for full feature set")
