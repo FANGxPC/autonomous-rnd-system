@@ -1,3 +1,55 @@
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# ====================== FIREBASE MOCKED OUT FOR TONIGHT ======================
+print("⚠️ WARNING: Running with MOCK Firebase until Member 3 provides the key tomorrow.")
+
+# import firebase_admin
+# from firebase_admin import credentials, firestore
+# cred_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+# cred = credentials.Certificate(cred_path)
+# firebase_admin.initialize_app(cred)
+# db = firestore.client()
+
+# ====================== MOCK TOOLS ======================
+
+def save_project_context_tool(project_key: str, category: str, value: str, notes: str = "") -> str:
+    print(f"[MOCK DB] Saved {category}: {value}")
+    return f"✅ MOCK Saved {category} for {project_key}"
+
+def retrieve_context_tool(project_key: str, category: str = None) -> str:
+    return f"📖 MOCK MEMORY: User requested a 16-bit RISC processor pipeline."
+
+def log_agent_action_tool(agent_name: str, action: str, details: str) -> str:
+    return f"✅ MOCK Action logged"
+
+def log_run_history_tool(summary: str, prompt: str = "") -> str:
+    return "✅ MOCK Run history saved"
+
+def list_all_projects() -> str:
+    return "📋 MOCK PROJECTS: verilog_alu_demo"
+
+def clear_project_memory(project_key: str, category: str = None) -> str:
+    return "🗑️ MOCK Deleted memory"
+
+def get_memory_summary(project_key: str) -> str:
+    return "📊 MOCK SUMMARY: Pipelined design required."
+
+memory_tools_phase3 = [
+    save_project_context_tool, retrieve_context_tool, log_agent_action_tool,
+    log_run_history_tool, list_all_projects, clear_project_memory, get_memory_summary
+]
+
+
+
+'''
+
+
+
+
+
 """
 MEMBER 3 - MEMORY ARCHITECT (Phase 1)
 File: database.py
@@ -302,3 +354,4 @@ memory_tools_phase3 = [
 print("✅ Member 3 Phase 3 Complete!")
 print("Advanced tools added: list_all_projects, clear_project_memory, get_memory_summary")
 print("Use memory_tools_phase3 for full feature set")
+'''
