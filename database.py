@@ -1,77 +1,53 @@
 """
-MEMBER 3 - MEMORY ARCHITECT
+MEMBER 3 - MEMORY ARCHITECT (Phase 1)
 File: database.py
-Purpose: Persistent memory for the entire multi-agent system using SQLite
+Database: Firebase Firestore (cloud, persistent)
 """
 
-import sqlite3
+import os
 from datetime import datetime
 from dotenv import load_dotenv
-import os
+import firebase_admin
+from firebase_admin import credentials, firestore
 
-# Load environment variables
 load_dotenv()
 
-# ====================== DATABASE SETUP ======================
-# Connect to SQLite database (creates the file if it doesn't exist)
-DB_NAME = "project_memory.db"
-conn = sqlite3.connect(DB_NAME, check_same_thread=False)  # Allow access from agents
-cursor = conn.cursor()
+# ====================== FIREBASE INITIALIZATION ======================
+# Initialize only once
+if not firebase_admin._apps:
+    cred_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+    if not cred_path or not os.path.exists(cred_path):
+        raise FileNotFoundError("❌ Service account JSON not found. Check GOOGLE_APPLICATION_CREDENTIALS in .env")
+    
+    cred = credentials.Certificate(cred_path)
+    firebase_admin.initialize_app(cred)
+    print("✅ Firebase Admin SDK initialized successfully!")
 
-# Create the main memory table (project_key e.g. "alu_verilog_2026";
-# category e.g. requirements/research/tasks/deadline; value can be JSON)
-cursor.execute('''
-CREATE TABLE IF NOT EXISTS project_memory (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    timestamp TEXT NOT NULL,
-    project_key TEXT UNIQUE,
-    category TEXT,
-    value TEXT NOT NULL,
-    notes TEXT
-)
-''')
-
-# Create another table for action logs (useful for debugging)
-cursor.execute('''
-CREATE TABLE IF NOT EXISTS action_logs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    timestamp TEXT NOT NULL,
-    agent_name TEXT,
-    action TEXT,
-    details TEXT
-)
-''')
-
-conn.commit()
-
-print(f"✅ Database initialized successfully! File: {DB_NAME}")
-print("Tables created: project_memory + action_logs\n")
+db = firestore.client()
 
 
 # ====================== CORE FUNCTIONS ======================
 
 def save_project_context(project_key: str, category: str, value: str, notes: str = "") -> str:
     """
-    Save important information to memory.
-    
-    Example:
-    save_project_context("alu_project", "requirements", "16-bit RISC processor in Verilog", "User wants pipelined design")
+    Save data to Firestore (append-only style - keeps history)
+    Example categories: "requirements", "research", "deadline", "tasks"
     """
     try:
         timestamp = datetime.now().isoformat()
+        doc_ref = db.collection("project_memory").document()
         
-        cursor.execute("""
-            INSERT OR REPLACE INTO project_memory 
-            (timestamp, project_key, category, value, notes)
-            VALUES (?, ?, ?, ?, ?)
-        """, (timestamp, project_key, category, value, notes))
+        doc_ref.set({
+            "project_key": project_key,
+            "category": category,
+            "value": value,
+            "notes": notes,
+            "timestamp": timestamp
+        })
         
-        conn.commit()
-        
-        success_msg = f"💾 SAVED → [{category}] {project_key}"
+        success_msg = f"💾 SAVED to Firestore → [{category}] {project_key}"
         print(success_msg)
         return success_msg
-        
     except Exception as e:
         error_msg = f"❌ Save Error: {str(e)}"
         print(error_msg)
@@ -80,98 +56,92 @@ def save_project_context(project_key: str, category: str, value: str, notes: str
 
 def retrieve_context(project_key: str, category: str = None) -> str:
     """
-    Get information from memory.
-    
-    If category is given, returns only that category.
-    Otherwise returns all data for the project.
+    Retrieve memory from Firestore.
+    If category is given → only that category.
+    Otherwise → all categories for the project.
     """
     try:
+        query = db.collection("project_memory").where("project_key", "==", project_key)
+        
         if category:
-            cursor.execute("""
-                SELECT timestamp, category, value, notes 
-                FROM project_memory 
-                WHERE project_key = ? AND category = ?
-                ORDER BY timestamp DESC
-            """, (project_key, category))
-        else:
-            cursor.execute("""
-                SELECT timestamp, category, value, notes 
-                FROM project_memory 
-                WHERE project_key = ?
-                ORDER BY timestamp DESC
-            """, (project_key,))
+            query = query.where("category", "==", category)
         
-        results = cursor.fetchall()
+        docs = query.order_by("timestamp", direction=firestore.Query.DESCENDING).stream()
         
+        results = list(docs)
         if not results:
             return f"No memory found for project: {project_key}"
         
-        output = f"📖 MEMORY FOR PROJECT: {project_key}\n"
-        output += "=" * 50 + "\n"
+        output = f"📖 FIRESTORE MEMORY FOR: {project_key}\n"
+        output += "=" * 60 + "\n"
         
-        for row in results:
-            ts, cat, val, notes = row
-            output += f"[{ts[:19]}] {cat.upper()}: {val}\n"
+        for doc in results:
+            data = doc.to_dict()
+            ts = data["timestamp"][:19]
+            cat = data["category"].upper()
+            val = data["value"]
+            notes = data.get("notes", "")
+            
+            output += f"[{ts}] {cat}: {val}\n"
             if notes:
                 output += f"   Notes: {notes}\n"
-            output += "-" * 40 + "\n"
+            output += "-" * 50 + "\n"
         
         print(output)
         return output
-        
     except Exception as e:
         return f"❌ Retrieve Error: {str(e)}"
 
 
 def log_agent_action(agent_name: str, action: str, details: str):
-    """Record what each agent did (good for debugging)"""
+    """Log what agents do (for debugging)"""
     try:
         timestamp = datetime.now().isoformat()
-        cursor.execute("""
-            INSERT INTO action_logs (timestamp, agent_name, action, details)
-            VALUES (?, ?, ?, ?)
-        """, (timestamp, agent_name, action, details))
-        conn.commit()
-        print(f"📝 Logged action: {agent_name} - {action}")
+        db.collection("action_logs").document().set({
+            "agent_name": agent_name,
+            "action": action,
+            "details": details,
+            "timestamp": timestamp
+        })
+        print(f"📝 Logged: {agent_name} - {action}")
     except:
-        pass  # Don't crash if logging fails
+        pass
 
 
-# ====================== TEST FUNCTION ======================
+def log_run_history(summary: str, prompt: str = ""):
+    """Optional: Log full pipeline runs (useful for Member 4)"""
+    try:
+        timestamp = datetime.now().isoformat()
+        db.collection("run_history").document().set({
+            "timestamp": timestamp,
+            "prompt": prompt,
+            "summary": summary
+        })
+        print(f"📊 Run history logged")
+    except:
+        pass
+
+
+# ====================== SELF-TEST ======================
 def run_test():
-    """Test the memory system"""
-    print("\n🧪 Running Memory System Test...\n")
-    
+    print("\n🧪 Running Firebase Memory Test...\n")
     project = "verilog_alu_demo"
     
-    save_project_context(
-        project_key=project,
-        category="requirements",
-        value="Design 16-bit RISC processor with ALU in Verilog",
-        notes="Must be synthesizable and have testbench"
-    )
+    save_project_context(project, "requirements", "Design 16-bit RISC processor with ALU in Verilog", "Must be pipelined")
+    save_project_context(project, "deadline", "2026-04-30", "Final hackathon submission")
+    save_project_context(project, "research", "https://arxiv.org/pdf/2305.12345.pdf", "Good RISC-V ALU reference")
     
-    save_project_context(
-        project_key=project,
-        category="deadline",
-        value="2026-04-30",
-        notes="Final submission date"
-    )
-    
-    save_project_context(
-        project_key=project,
-        category="research",
-        value="https://arxiv.org/pdf/2305.12345.pdf - RISC-V architecture paper",
-        notes="Good reference for ALU design"
-    )
-    
-    # Retrieve everything
-    print("\nRetrieving full memory...")
+    print("\nRetrieving full memory:")
     retrieve_context(project)
     
-    log_agent_action("Tech_Lead", "saved_requirements", "User wants pipelined ALU")
+    print("\nRetrieving only deadline:")
+    retrieve_context(project, "deadline")
+    
+    log_agent_action("Tech_Lead", "saved_requirements", "User wants pipelined design")
+    log_run_history("Test run completed successfully", "Design 16-bit ALU")
+    
+    print("\n✅ All tests passed! Check Firebase console to see the documents.")
 
 
-# Run test when file is executed directly
 if __name__ == "__main__":
     run_test()
