@@ -145,3 +145,67 @@ def run_test():
 
 if __name__ == "__main__":
     run_test()
+
+# ====================== PHASE 2: ADK TOOL WRAPPERS ======================
+# Plain functions work as tools: LlmAgent wraps callables with FunctionTool.
+
+def save_project_context_tool(
+    project_key: str, 
+    category: str, 
+    value: str, 
+    notes: str = ""
+) -> str:
+    """
+    Save project data to Firebase Firestore.
+    Use this tool when you want the team to remember requirements, research, deadlines, etc.
+    """
+    return save_project_context(project_key, category, value, notes)
+
+
+def retrieve_context_tool(
+    project_key: str, 
+    category: str = None
+) -> str:
+    """
+    Retrieve memory from Firebase Firestore.
+    If category is provided, returns only that category. 
+    Otherwise returns all memory for the project.
+    """
+    return retrieve_context(project_key, category)
+
+
+def log_agent_action_tool(
+    agent_name: str, 
+    action: str, 
+    details: str
+) -> str:
+    """
+    Log agent actions for debugging and tracking.
+    """
+    log_agent_action(agent_name, action, details)
+    return f"✅ Action logged: {agent_name} - {action}"
+
+
+def log_run_history_tool(
+    summary: str, 
+    prompt: str = ""
+) -> str:
+    """
+    Log the full pipeline run (useful for Member 4 backend).
+    """
+    log_run_history(summary, prompt)
+    return "✅ Run history saved to Firestore"
+
+
+# ====================== EXPORT FOR MEMBER 1 ======================
+memory_tools = [
+    save_project_context_tool,
+    retrieve_context_tool,
+    log_agent_action_tool,
+    log_run_history_tool
+]
+
+print("✅ Member 3 Phase 2 Complete!")
+print("Member 1 can now import:")
+print("   from database import memory_tools")
+print("Then add: tools=memory_tools  to Tech_Lead agent")
