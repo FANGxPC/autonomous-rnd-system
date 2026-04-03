@@ -1,3 +1,4 @@
+.env
 project_memory.db
 __pycache__/
 .adk_env/

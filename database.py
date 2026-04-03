@@ -1,55 +1,3 @@
-import os
-from dotenv import load_dotenv
-
-load_dotenv()
-
-# ====================== FIREBASE MOCKED OUT FOR TONIGHT ======================
-print("⚠️ WARNING: Running with MOCK Firebase until Member 3 provides the key tomorrow.")
-
-# import firebase_admin
-# from firebase_admin import credentials, firestore
-# cred_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
-# cred = credentials.Certificate(cred_path)
-# firebase_admin.initialize_app(cred)
-# db = firestore.client()
-
-# ====================== MOCK TOOLS ======================
-
-def save_project_context_tool(project_key: str, category: str, value: str, notes: str = "") -> str:
-    print(f"[MOCK DB] Saved {category}: {value}")
-    return f"✅ MOCK Saved {category} for {project_key}"
-
-def retrieve_context_tool(project_key: str, category: str = None) -> str:
-    return f"📖 MOCK MEMORY: User requested a 16-bit RISC processor pipeline."
-
-def log_agent_action_tool(agent_name: str, action: str, details: str) -> str:
-    return f"✅ MOCK Action logged"
-
-def log_run_history_tool(summary: str, prompt: str = "") -> str:
-    return "✅ MOCK Run history saved"
-
-def list_all_projects() -> str:
-    return "📋 MOCK PROJECTS: verilog_alu_demo"
-
-def clear_project_memory(project_key: str, category: str = None) -> str:
-    return "🗑️ MOCK Deleted memory"
-
-def get_memory_summary(project_key: str) -> str:
-    return "📊 MOCK SUMMARY: Pipelined design required."
-
-memory_tools_phase3 = [
-    save_project_context_tool, retrieve_context_tool, log_agent_action_tool,
-    log_run_history_tool, list_all_projects, clear_project_memory, get_memory_summary
-]
-
-
-
-'''
-
-
-
-
-
 """
 MEMBER 3 - MEMORY ARCHITECT (Phase 1)
 File: database.py
@@ -61,6 +9,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 import firebase_admin
 from firebase_admin import credentials, firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 load_dotenv()
 
@@ -113,14 +62,18 @@ def retrieve_context(project_key: str, category: str = None) -> str:
     Otherwise → all categories for the project.
     """
     try:
-        query = db.collection("project_memory").where("project_key", "==", project_key)
-        
+        query = db.collection("project_memory").where(
+            filter=FieldFilter("project_key", "==", project_key)
+        )
         if category:
-            query = query.where("category", "==", category)
-        
-        docs = query.order_by("timestamp", direction=firestore.Query.DESCENDING).stream()
-        
-        results = list(docs)
+            query = query.where(filter=FieldFilter("category", "==", category))
+
+        snapshots = list(query.stream())
+        snapshots.sort(
+            key=lambda d: (d.to_dict() or {}).get("timestamp") or "",
+            reverse=True,
+        )
+        results = snapshots
         if not results:
             return f"No memory found for project: {project_key}"
         
@@ -128,10 +81,10 @@ def retrieve_context(project_key: str, category: str = None) -> str:
         output += "=" * 60 + "\n"
         
         for doc in results:
-            data = doc.to_dict()
-            ts = data["timestamp"][:19]
-            cat = data["category"].upper()
-            val = data["value"]
+            data = doc.to_dict() or {}
+            ts = (data.get("timestamp") or "")[:19]
+            cat = (data.get("category") or "").upper()
+            val = data.get("value", "")
             notes = data.get("notes", "")
             
             output += f"[{ts}] {cat}: {val}\n"
@@ -289,10 +242,12 @@ def list_all_projects() -> str:
 def clear_project_memory(project_key: str, category: str = None) -> str:
     """Delete memory for a specific project or category"""
     try:
-        query = db.collection("project_memory").where("project_key", "==", project_key)
+        query = db.collection("project_memory").where(
+            filter=FieldFilter("project_key", "==", project_key)
+        )
         if category:
-            query = query.where("category", "==", category)
-        
+            query = query.where(filter=FieldFilter("category", "==", category))
+
         docs = query.stream()
         deleted_count = 0
         for doc in docs:
@@ -307,15 +262,21 @@ def clear_project_memory(project_key: str, category: str = None) -> str:
 def get_memory_summary(project_key: str) -> str:
     """Get a clean summary of all categories for a project"""
     try:
-        docs = db.collection("project_memory").where("project_key", "==", project_key)\
-                .order_by("timestamp", direction=firestore.Query.DESCENDING).stream()
-        
+        q = db.collection("project_memory").where(
+            filter=FieldFilter("project_key", "==", project_key)
+        )
+        snapshots = list(q.stream())
+        snapshots.sort(
+            key=lambda d: (d.to_dict() or {}).get("timestamp") or "",
+            reverse=True,
+        )
         summary = {}
-        for doc in docs:
-            data = doc.to_dict()
-            cat = data["category"]
-            if cat not in summary:
-                summary[cat] = data["value"]
+        for doc in snapshots:
+            data = doc.to_dict() or {}
+            cat = data.get("category")
+            if not cat or cat in summary:
+                continue
+            summary[cat] = data.get("value", "")
         
         output = f"📊 MEMORY SUMMARY FOR: {project_key}\n"
         output += "=" * 50 + "\n"
@@ -354,4 +315,3 @@ memory_tools_phase3 = [
 print("✅ Member 3 Phase 3 Complete!")
 print("Advanced tools added: list_all_projects, clear_project_memory, get_memory_summary")
 print("Use memory_tools_phase3 for full feature set")
-'''
