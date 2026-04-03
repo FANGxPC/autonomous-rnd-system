@@ -9,6 +9,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 import firebase_admin
 from firebase_admin import credentials, firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 load_dotenv()
 
@@ -61,14 +62,18 @@ def retrieve_context(project_key: str, category: str = None) -> str:
     Otherwise → all categories for the project.
     """
     try:
-        query = db.collection("project_memory").where("project_key", "==", project_key)
-        
+        query = db.collection("project_memory").where(
+            filter=FieldFilter("project_key", "==", project_key)
+        )
         if category:
-            query = query.where("category", "==", category)
-        
-        docs = query.order_by("timestamp", direction=firestore.Query.DESCENDING).stream()
-        
-        results = list(docs)
+            query = query.where(filter=FieldFilter("category", "==", category))
+
+        snapshots = list(query.stream())
+        snapshots.sort(
+            key=lambda d: (d.to_dict() or {}).get("timestamp") or "",
+            reverse=True,
+        )
+        results = snapshots
         if not results:
             return f"No memory found for project: {project_key}"
         
@@ -76,10 +81,10 @@ def retrieve_context(project_key: str, category: str = None) -> str:
         output += "=" * 60 + "\n"
         
         for doc in results:
-            data = doc.to_dict()
-            ts = data["timestamp"][:19]
-            cat = data["category"].upper()
-            val = data["value"]
+            data = doc.to_dict() or {}
+            ts = (data.get("timestamp") or "")[:19]
+            cat = (data.get("category") or "").upper()
+            val = data.get("value", "")
             notes = data.get("notes", "")
             
             output += f"[{ts}] {cat}: {val}\n"
@@ -237,10 +242,12 @@ def list_all_projects() -> str:
 def clear_project_memory(project_key: str, category: str = None) -> str:
     """Delete memory for a specific project or category"""
     try:
-        query = db.collection("project_memory").where("project_key", "==", project_key)
+        query = db.collection("project_memory").where(
+            filter=FieldFilter("project_key", "==", project_key)
+        )
         if category:
-            query = query.where("category", "==", category)
-        
+            query = query.where(filter=FieldFilter("category", "==", category))
+
         docs = query.stream()
         deleted_count = 0
         for doc in docs:
@@ -255,15 +262,21 @@ def clear_project_memory(project_key: str, category: str = None) -> str:
 def get_memory_summary(project_key: str) -> str:
     """Get a clean summary of all categories for a project"""
     try:
-        docs = db.collection("project_memory").where("project_key", "==", project_key)\
-                .order_by("timestamp", direction=firestore.Query.DESCENDING).stream()
-        
+        q = db.collection("project_memory").where(
+            filter=FieldFilter("project_key", "==", project_key)
+        )
+        snapshots = list(q.stream())
+        snapshots.sort(
+            key=lambda d: (d.to_dict() or {}).get("timestamp") or "",
+            reverse=True,
+        )
         summary = {}
-        for doc in docs:
-            data = doc.to_dict()
-            cat = data["category"]
-            if cat not in summary:
-                summary[cat] = data["value"]
+        for doc in snapshots:
+            data = doc.to_dict() or {}
+            cat = data.get("category")
+            if not cat or cat in summary:
+                continue
+            summary[cat] = data.get("value", "")
         
         output = f"📊 MEMORY SUMMARY FOR: {project_key}\n"
         output += "=" * 50 + "\n"
