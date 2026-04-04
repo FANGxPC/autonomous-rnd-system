@@ -1,33 +1,28 @@
 """
-MEMBER 1 base + MEMBER 2 MCP tool integration
-Member 2 replaced mock_create_ticket with real Notion + Calendar tools
+ADK agents: Tech Lead (Firestore) + Research (mock arxiv) + Scrum Master (Notion + Google Calendar).
 """
 
 import os
+
 from dotenv import load_dotenv
 from google.adk.agents import Agent
 
-# Member 3's Firebase memory tools (unchanged)
-from database import memory_tools_phase3
-
-# Member 2's real MCP tools (replacing the mocks)
-from notion_tool   import create_kanban_card, list_kanban_cards
 from calendar_tool import create_calendar_block, get_free_slots
+from database import memory_tools_phase3
+from notion_tool import create_kanban_card, list_kanban_cards
 
 load_dotenv()
 
-# ----------------------------
-# Mock Research Tool (Member 1 - unchanged)
-# ----------------------------
+ADK_MODEL = os.getenv("ADK_MODEL", "gemini-2.5-flash")
+ADK_LITE = os.getenv("ADK_LITE", "0").strip().lower() in ("1", "true", "yes", "on")
+
+
 def mock_search_arxiv(query: str) -> str:
     return f"[MOCK] Found research papers related to '{query}'"
 
-# ----------------------------
-# Research Agent (Member 1 - unchanged)
-# ----------------------------
 research_agent = Agent(
     name="research_agent",
-    model="gemini-2.5-flash",
+    model=ADK_MODEL,
     description="Finds research papers and datasets.",
     instruction="""
     You are the Research Agent.
@@ -37,13 +32,9 @@ research_agent = Agent(
     tools=[mock_search_arxiv],
 )
 
-# ----------------------------
-# Scrum Master Agent
-# MEMBER 2: replaced mock_create_ticket with real Notion + Calendar tools
-# ----------------------------
 scrum_master_agent = Agent(
     name="scrum_master_agent",
-    model="gemini-2.5-flash",
+    model=ADK_MODEL,
     description="Creates real Kanban cards in Notion and blocks Deep Work time on Google Calendar.",
     instruction="""
     You are the Scrum Master Agent.
@@ -65,12 +56,9 @@ scrum_master_agent = Agent(
     ],
 )
 
-# ----------------------------
-# Tech Lead Agent (Member 1 - unchanged, just passes sub-agents)
-# ----------------------------
 tech_lead_agent = Agent(
     name="tech_lead_agent",
-    model="gemini-2.5-flash",
+    model=ADK_MODEL,
     description="Main coordinator agent.",
     instruction="""
     You are the Tech Lead Agent.
@@ -84,6 +72,3 @@ tech_lead_agent = Agent(
     tools=memory_tools_phase3,
     sub_agents=[research_agent, scrum_master_agent],
 )
-
-print("✅ Member 2 MCP tools wired into scrum_master_agent!")
-print("   Real tools: create_kanban_card, list_kanban_cards, create_calendar_block, get_free_slots")

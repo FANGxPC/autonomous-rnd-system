@@ -5,17 +5,20 @@ Action 2: Google Calendar MCP Tool
 Creates Deep Work blocks on the user's calendar
 """
 
-import os
 import json
+import os
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+
+from dotenv import load_dotenv
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
-from dotenv import load_dotenv
 
 load_dotenv()
 
-SCOPES      = ["https://www.googleapis.com/auth/calendar"]
+SCOPES = ["https://www.googleapis.com/auth/calendar"]
 CALENDAR_ID = os.environ.get("GOOGLE_CALENDAR_ID", "primary")
+IST = ZoneInfo("Asia/Kolkata")
 
 
 def _get_calendar_service():
@@ -60,14 +63,15 @@ def create_calendar_block(
         Confirmation string with the Google Calendar event link
     """
     try:
-        service   = _get_calendar_service()
-        start_dt  = datetime.fromisoformat(date).replace(
-                        hour=start_hour, minute=0, second=0
-                    )
-        end_dt    = start_dt + timedelta(hours=duration_hours)
+        service = _get_calendar_service()
+        base = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=IST)
+        start_dt = base.replace(
+            hour=start_hour, minute=0, second=0, microsecond=0
+        )
+        end_dt = start_dt + timedelta(hours=duration_hours)
 
         event = {
-            "summary":     f"🔒 Deep Work: {task_title}",
+            "summary": f"🔒 Deep Work: {task_title}",
             "description": description or f"Focused session for: {task_title}",
             "start": {
                 "dateTime": start_dt.isoformat(),
@@ -89,18 +93,14 @@ def create_calendar_block(
         ).execute()
 
         link   = created.get("htmlLink", "no-link")
-        result = (
+        return (
             f"✅ Calendar block created: '🔒 Deep Work: {task_title}'\n"
             f"   Date: {date} | {start_hour}:00 → {start_hour + duration_hours}:00 IST\n"
             f"   Link: {link}"
         )
-        print(result)
-        return result
 
     except Exception as e:
-        error = f"❌ Calendar error: {str(e)}"
-        print(error)
-        return error
+        return f"❌ Calendar error: {str(e)}"
 
 
 def get_free_slots(date: str, work_start: int = 9, work_end: int = 20) -> str:
@@ -117,34 +117,37 @@ def get_free_slots(date: str, work_start: int = 9, work_end: int = 20) -> str:
         A formatted string listing available 2-hour slots
     """
     try:
-        service   = _get_calendar_service()
-        day_start = datetime.fromisoformat(date).replace(
-                        hour=work_start, minute=0, second=0
-                    )
-        day_end   = datetime.fromisoformat(date).replace(
-                        hour=work_end, minute=0, second=0
-                    )
+        service = _get_calendar_service()
+        base = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=IST)
+        day_start = base.replace(
+            hour=work_start, minute=0, second=0, microsecond=0
+        )
+        day_end = base.replace(
+            hour=work_end, minute=0, second=0, microsecond=0
+        )
 
         events_result = service.events().list(
             calendarId=CALENDAR_ID,
-            timeMin=day_start.isoformat() + "+05:30",
-            timeMax=day_end.isoformat()   + "+05:30",
+            timeMin=day_start.isoformat(),
+            timeMax=day_end.isoformat(),
             singleEvents=True,
             orderBy="startTime",
         ).execute()
 
-        # Build busy list
-        busy = []
+        busy: list[tuple[datetime, datetime]] = []
         for ev in events_result.get("items", []):
             s = ev["start"].get("dateTime") or ev["start"].get("date")
-            e = ev["end"].get("dateTime")   or ev["end"].get("date")
-            if "T" in s:
-                busy.append((
-                    datetime.fromisoformat(s.replace("Z", "+00:00")),
-                    datetime.fromisoformat(e.replace("Z", "+00:00")),
-                ))
+            e = ev["end"].get("dateTime") or ev["end"].get("date")
+            if "T" not in str(s):
+                continue
+            b_start = datetime.fromisoformat(
+                str(s).replace("Z", "+00:00")
+            ).astimezone(IST)
+            b_end = datetime.fromisoformat(
+                str(e).replace("Z", "+00:00")
+            ).astimezone(IST)
+            busy.append((b_start, b_end))
 
-        # Find gaps ≥ 2 hours
         free_slots = []
         cursor = day_start
         for b_start, b_end in sorted(busy):
@@ -164,7 +167,6 @@ def get_free_slots(date: str, work_start: int = 9, work_end: int = 20) -> str:
         for s, e in free_slots:
             output += f"  • {s.strftime('%H:%M')} – {e.strftime('%H:%M')} IST\n"
 
-        print(output)
         return output
 
     except Exception as e:

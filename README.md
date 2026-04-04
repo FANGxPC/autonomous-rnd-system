@@ -9,10 +9,9 @@
 | Area | Status |
 |------|--------|
 | **API** | `GET /` — quick info and example JSON · `GET /docs` — Swagger · **`POST /trigger-pipeline`** — runs the agent pipeline |
-| **Agents (ADK)** | **Tech Lead** root agent; optional **Research** + **Scrum Master** sub-agents when `ADK_LITE=0` |
+| **Agents (ADK)** | **Tech Lead** root with **Research** + **Scrum Master** sub-agents (always). `ADK_LITE` in `.env` only changes the **user prompt** in `main.py` (lite wording asks the model to minimize tool calls); it does **not** remove sub-agents. |
 | **Memory** | Firestore collections: `project_memory`, `action_logs`, `run_history` |
-| **Tools** | Real: save / retrieve / log / list / clear / summary (Firestore). **Mock:** `mock_search_arxiv`, `mock_create_ticket` (placeholders until real MCP integrations) |
-| **MCP (calendar, Notion, etc.)** | Not wired in this repo yet — stubs are in `agents.py` for the hackathon merge |
+| **Tools** | Firestore memory (`database.py`) · **Notion** Kanban (`notion_tool.py`) · **Google Calendar** (`calendar_tool.py`) · Research uses **`mock_search_arxiv`** (placeholder). |
 
 ```mermaid
 flowchart LR
@@ -27,21 +26,23 @@ flowchart LR
   FS[(Firestore)]
   P --> TL
   TL --> FS
-  TL -.->|ADK_LITE=0| R
-  TL -.->|ADK_LITE=0| S
+  TL --> R
+  TL --> S
 ```
 
 ---
 
 ## Prerequisites
 
-- **Python 3.11+** (3.13 works with the team’s `.adk_env` setup)
+- **Python 3.11+** (3.13 works with a local venv such as `.adk_env`)
 - A **Google Cloud project** with:
   - **Firestore** enabled (Native mode)
-  - A **service account** JSON with permission to use Firestore (e.g. **Cloud Datastore User** or a broader role your team agrees on)
+  - A **service account** JSON with permission to use Firestore (e.g. **Cloud Datastore User** or a role your team agrees on)
 - **Gemini access** via either:
-  - **Vertex AI** (recommended if you have **GCP / hackathon credits**): enable **Vertex AI API**, link **billing**, grant the same (or another) service account **Vertex AI User** (`roles/aiplatform.user`), **or**
+  - **Vertex AI** (recommended if you have **GCP / hackathon credits**): enable **Vertex AI API**, link **billing**, grant the service account **Vertex AI User** (`roles/aiplatform.user`), **or**
   - **Gemini Developer API**: an API key from [Google AI Studio](https://aistudio.google.com/apikey) — free tier is easy to exceed with multi-step agents
+- **Notion**: Integration with access to your Kanban database; share the database with the integration.
+- **Google Calendar**: OAuth **Desktop** client in GCP with **Google Calendar API** enabled; run `auth_setup.py` once to create `token.json`.
 
 ---
 
@@ -61,14 +62,14 @@ source .adk_env/bin/activate    # Windows: .adk_env\Scripts\activate
 pip install -r requirements.txt
 ```
 
-`requirements.txt` includes: `google-adk`, `fastapi`, `uvicorn`, `pydantic`, `python-dotenv`, `firebase-admin`, `rich`.
+`requirements.txt` includes: `google-adk`, `fastapi`, `uvicorn`, `pydantic`, `python-dotenv`, `firebase-admin`, `rich`, `notion-client`, `google-api-python-client`, `google-auth-httplib2`, `google-auth-oauthlib`.
 
 ### 3. Firebase / Firestore
 
 1. In [Firebase Console](https://console.firebase.google.com/), create or select a project (or use your GCP project with Firestore).
-2. Enable **Firestore Database** (start in test mode for a hackathon only if you understand the rules; prefer production rules + auth for anything public).
+2. Enable **Firestore Database** (test mode is only for hacks you fully understand; prefer production rules for anything exposed).
 3. In **Google Cloud Console** → **IAM & Admin** → **Service accounts** → your account → **Keys** → **Add key** → JSON.
-4. Save the file **outside the repo** (e.g. `~/secrets/hackathon-sa.json`) or in a gitignored path — **never commit it**.
+4. Save the file **outside the repo** or in a gitignored path — **never commit it**.
 
 ### 4. Environment variables
 
@@ -81,12 +82,18 @@ Edit **`.env`**:
 | Variable | Purpose |
 |----------|---------|
 | `GOOGLE_APPLICATION_CREDENTIALS` | **Required.** Absolute path to the service account JSON (Firestore + optional Vertex auth). |
-| `GOOGLE_API_KEY` | **Developer API only.** Set if you are **not** using Vertex. Remove or comment when using Vertex so calls go through GCP auth. |
+| `GOOGLE_API_KEY` | **Developer API only.** Set if you are **not** using Vertex. Remove or leave unset when using Vertex. |
 | `GOOGLE_GENAI_USE_VERTEXAI` | Set to `1` to use **Vertex AI** for Gemini. |
 | `GOOGLE_CLOUD_PROJECT` | GCP project id (same as Firestore project if unified). |
 | `GOOGLE_CLOUD_LOCATION` | e.g. `us-central1` (must support your model). |
 | `ADK_MODEL` | Default in code: `gemini-2.5-flash`. Change if your region/backend requires another id. |
-| `ADK_LITE` | `1` (default) = single agent, fewer LLM calls. `0` = full Tech Lead → Research → Scrum. |
+| `ADK_LITE` | `1` = API sends “lite” instructions (ask model to minimize tool calls). `0` (default in code if unset) = fuller coordination wording. **Sub-agents always run.** |
+| `NOTION_TOKEN` | Notion integration secret. |
+| `NOTION_DATABASE_ID` | Kanban database id (UUID from the database URL). |
+| `NOTION_DATA_SOURCE_ID` | Optional. Notion API **2025-09-03** often needs the **data source** id (Database → **Manage data sources**). |
+| `NOTION_PROP_TITLE`, `NOTION_PROP_STATUS`, `NOTION_PROP_DATE` | Optional overrides if auto-detect of property names fails. |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | OAuth *Desktop* client for Calendar API. |
+| `GOOGLE_CALENDAR_ID` | Optional; default `primary`. |
 
 **Vertex (typical hackathon with credits):**
 
@@ -99,6 +106,16 @@ ADK_MODEL=gemini-2.5-flash
 ADK_LITE=1
 # Do NOT set GOOGLE_API_KEY
 ```
+
+### 4b. Google Calendar token (one-time)
+
+After `.env` has `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`:
+
+```bash
+python auth_setup.py
+```
+
+A browser opens; sign in and allow access. This writes **`token.json`** in the project root (`calendar_tool.py` reads it). Re-run if you revoke access or need a new refresh token.
 
 **Developer API only (no Vertex):**
 
@@ -155,15 +172,19 @@ Writes sample docs to Firestore and prints retrieve output. Confirm data in the 
 | File | Role |
 |------|------|
 | `main.py` | FastAPI app, `InMemoryRunner`, session per `project_key`, Rich logging, 429 retry |
-| `agents.py` | ADK `Agent` definitions, `ADK_MODEL` / `ADK_LITE`, mock tools, `tech_lead_agent` |
-| `database.py` | Firebase init, Firestore CRUD, `memory_tools_phase3` for the Tech Lead |
+| `agents.py` | ADK agents: Tech Lead (`memory_tools_phase3`), Research (`mock_search_arxiv`), Scrum (Notion + Calendar) |
+| `database.py` | Firebase init, Firestore CRUD, `memory_tools` / `memory_tools_phase3` |
+| `notion_tool.py` | Notion Kanban create/list (data-source aware for API 2025-09-03) |
+| `calendar_tool.py` | Free slots + Deep Work blocks (timezone-aware vs Calendar API) |
+| `auth_setup.py` | One-time OAuth → `token.json` for Calendar |
+| `test_member2.py` | Async test: Scrum tools + Notion + Calendar |
 | `requirements.txt` | Python dependencies |
 | `.env.example` | Template for secrets and flags (copy to `.env`) |
 
 ### Imports for teammates
 
-- **Member 1 (orchestration):** `from agents import tech_lead_agent` · tools are already bound; swap mocks for real MCP toolsets when ready.
-- **Member 3 contract:** `from database import memory_tools_phase3` or individual functions: `save_project_context`, `retrieve_context`, `log_agent_action`, `log_run_history`.
+- **Orchestration / API:** `from agents import tech_lead_agent, ADK_MODEL, ADK_LITE`
+- **Memory tools:** `from database import memory_tools_phase3` or `save_project_context`, `retrieve_context`, `log_agent_action`, `log_run_history`
 
 ---
 
@@ -172,16 +193,19 @@ Writes sample docs to Firestore and prints retrieve output. Confirm data in the 
 | Symptom | What to check |
 |---------|----------------|
 | `FileNotFoundError` for service account | `GOOGLE_APPLICATION_CREDENTIALS` path is wrong or file missing; use an **absolute** path. |
-| `429` / `RESOURCE_EXHAUSTED` | Free tier is tiny for long tool loops. Use **`ADK_LITE=1`**, wait between runs, switch **`ADK_MODEL`**, or use **Vertex + billing/credits**. |
+| `429` / `RESOURCE_EXHAUSTED` | Free tier is tiny for long tool loops. Set **`ADK_LITE=1`**, wait between runs, switch **`ADK_MODEL`**, or use **Vertex + billing/credits**. |
 | Firestore permission errors | Service account has Firestore access on that project. |
 | Vertex errors | **Vertex AI API** enabled, **billing** on project, service account has **Vertex AI User**, `GOOGLE_CLOUD_PROJECT` / `GOOGLE_CLOUD_LOCATION` correct; **unset `GOOGLE_API_KEY`**. |
-| `GET /` returns 404 in browser | Use **`GET /`** on port 8000; root is defined. If you see 404, confirm you are hitting this app, not another process. |
+| Notion `KeyError('properties')` or wrong schema | Set **`NOTION_DATA_SOURCE_ID`** from the database’s **Manage data sources**; ensure the integration can access the DB. |
+| Notion wrong column names | Set **`NOTION_PROP_*`** overrides or fix property titles in Notion. |
+| Calendar OAuth errors | **Calendar API** enabled; OAuth consent screen + **test users** if app is in testing; Desktop client id/secret in `.env`. |
+| `GET /` returns 404 | Confirm you are on port **8000** and hitting this app’s process. |
 
 ---
 
 ## Security
 
-- **Never commit** `.env` or service account JSON (this repo gitignores `.env`).
+- **Never commit** `.env`, **`token.json`**, or service account JSON (use `.gitignore`).
 - Restrict Firestore rules before any public deployment.
 
 ---
