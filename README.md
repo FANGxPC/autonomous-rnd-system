@@ -232,4 +232,4 @@ Writes sample docs to Firestore and prints retrieve output. Confirm data in the 
 
 ## License / credits
 
-Built for the **Google Gen AI APAC Hackathon**. Adjust team names and demo script as needed.
+Built for the **Google Gen AI APAC Hackathon**.
