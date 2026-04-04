@@ -11,7 +11,7 @@
 | **API** | `GET /` — quick info and example JSON · `GET /docs` — Swagger · **`POST /trigger-pipeline`** — runs the agent pipeline |
 | **Agents (ADK)** | **Tech Lead** root with **Research** + **Scrum Master** sub-agents (always). `ADK_LITE` in `.env` only changes the **user prompt** in `main.py` (lite wording asks the model to minimize tool calls); it does **not** remove sub-agents. |
 | **Memory** | Firestore collections: `project_memory`, `action_logs`, `run_history` |
-| **Tools** | Firestore memory (`database.py`) · **Notion** Kanban (`notion_tool.py`) · **Google Calendar** (`calendar_tool.py`) · Research uses **`mock_search_arxiv`** (placeholder). |
+| **Tools** | Firestore memory (`database.py`) · **Notion** (`notion_tool.py`) — see **Notion modes** below · **Google Calendar** (`calendar_tool.py`) · Research uses **`mock_search_arxiv`** (placeholder). |
 
 ```mermaid
 flowchart LR
@@ -32,6 +32,20 @@ flowchart LR
 
 ---
 
+## Notion modes
+
+| Mode | Env | Behavior |
+|------|-----|----------|
+| **Runs hub (default)** | `NOTION_RUNS_PARENT_PAGE_ID` set | Each `POST /trigger-pipeline` creates a **child page** under that hub. Tasks are appended as **to-do blocks** on that page (no extra database). Response includes `notion.run_page_url`. |
+| **Runs + per-run Kanban** | `NOTION_RUNS_PARENT_PAGE_ID` + `NOTION_RUN_USE_KANBAN_DB=1` | Same child page, plus a **new database** on that page per run. Property names are read from Notion after create (works with API 2025-09-03). |
+| **Template only** | `NOTION_RUNS_PARENT_PAGE_ID` unset | `create_kanban_card` / `list_kanban_cards` use **`NOTION_DATABASE_ID`** only (e.g. a shared RnD Task Board). |
+
+**Integration access:** The Runs **hub page** must be connected to your integration (**⋯ → Connections**, or Share → add the integration — not the same as “public to web”). Otherwise Notion returns “Could not find page”.
+
+**ADK + threads:** Tool calls may run on a worker thread where `ContextVar` is empty. The app mirrors the active run into short-lived **`_RND_NOTION_REQ_*` environment variables** during each request so Notion tools still target the correct page or database. This is aimed at **one pipeline at a time** per process; heavy concurrent traffic could theoretically clash.
+
+---
+
 ## Prerequisites
 
 - **Python 3.11+** (3.13 works with a local venv such as `.adk_env`)
@@ -41,8 +55,8 @@ flowchart LR
 - **Gemini access** via either:
   - **Vertex AI** (recommended if you have **GCP / hackathon credits**): enable **Vertex AI API**, link **billing**, grant the service account **Vertex AI User** (`roles/aiplatform.user`), **or**
   - **Gemini Developer API**: an API key from [Google AI Studio](https://aistudio.google.com/apikey) — free tier is easy to exceed with multi-step agents
-- **Notion**: Integration with access to your Kanban database; share the database with the integration.
-- **Google Calendar**: OAuth **Desktop** client in GCP with **Google Calendar API** enabled; run `auth_setup.py` once to create `token.json`.
+- **Notion:** Integration token; **connect** it to your **Runs hub** page and (if used) your **template** Kanban database.
+- **Google Calendar:** OAuth **Desktop** client in GCP with **Google Calendar API** enabled; run `auth_setup.py` once to create `token.json`.
 
 ---
 
@@ -89,9 +103,11 @@ Edit **`.env`**:
 | `ADK_MODEL` | Default in code: `gemini-2.5-flash`. Change if your region/backend requires another id. |
 | `ADK_LITE` | `1` = API sends “lite” instructions (ask model to minimize tool calls). `0` (default in code if unset) = fuller coordination wording. **Sub-agents always run.** |
 | `NOTION_TOKEN` | Notion integration secret. |
-| `NOTION_DATABASE_ID` | Kanban database id (UUID from the database URL). |
-| `NOTION_DATA_SOURCE_ID` | Optional. Notion API **2025-09-03** often needs the **data source** id (Database → **Manage data sources**). |
-| `NOTION_PROP_TITLE`, `NOTION_PROP_STATUS`, `NOTION_PROP_DATE` | Optional overrides if auto-detect of property names fails. |
+| `NOTION_DATABASE_ID` | Template Kanban database id when **not** using Runs mode, or for `python notion_tool.py` tests. Still recommended when using Runs mode for local tooling. |
+| `NOTION_RUNS_PARENT_PAGE_ID` | Optional. **Runs hub** page id (from URL). Each POST creates a child page; tasks go there as to-dos unless `NOTION_RUN_USE_KANBAN_DB=1`. |
+| `NOTION_RUN_USE_KANBAN_DB` | `1` = create a **new database** on each run page instead of to-do blocks. |
+| `NOTION_DATA_SOURCE_ID` | Optional. Notion API **2025-09-03** may need the **data source** id (Database → **Manage data sources**). |
+| `NOTION_PROP_TITLE`, `NOTION_PROP_STATUS`, `NOTION_PROP_DATE` | Optional overrides for **`NOTION_DATABASE_ID` only**. Must match that board’s real property names; wrong values cause “property does not exist” errors. |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | OAuth *Desktop* client for Calendar API. |
 | `GOOGLE_CALENDAR_ID` | Optional; default `primary`. |
 
@@ -161,7 +177,10 @@ Writes sample docs to Firestore and prints retrieve output. Confirm data in the 
 ```
 
 4. **Execute**.  
-   - **Response:** `status`, echoed `input`, `outcome.summary`, `outcome.event_count`, `meta` (`model`, `adk_lite`), timestamps.  
+   - **Response:** `status`, echoed `input`, `outcome.summary`, `outcome.event_count`, `meta` (`model`, `adk_lite`, optional Notion URLs), timestamps.  
+   - If Runs mode is on: **`notion.run_page_url`** and **`notion.run_page_id`**; **`notion.kanban_database_id`** only when `NOTION_RUN_USE_KANBAN_DB=1`.  
+   - On final **429** failure: **`quota_hint`**.  
+   - On Notion hub access failure: **`notion_setup_hint`** (JSON `status: error`).  
    - **Terminal:** colored logs (agents, tool calls).  
 5. On success, a row is appended to Firestore **`run_history`**.
 
@@ -171,10 +190,10 @@ Writes sample docs to Firestore and prints retrieve output. Confirm data in the 
 
 | File | Role |
 |------|------|
-| `main.py` | FastAPI app, `InMemoryRunner`, session per `project_key`, Rich logging, 429 retry |
+| `main.py` | FastAPI app, `InMemoryRunner`, session per `project_key`, Notion run workspace before agent, Rich logging, Vertex/Gemini **429** retries with backoff, friendly Notion API errors |
 | `agents.py` | ADK agents: Tech Lead (`memory_tools_phase3`), Research (`mock_search_arxiv`), Scrum (Notion + Calendar) |
 | `database.py` | Firebase init, Firestore CRUD, `memory_tools` / `memory_tools_phase3` |
-| `notion_tool.py` | Notion Kanban create/list (data-source aware for API 2025-09-03) |
+| `notion_tool.py` | Runs hub child page, to-do blocks or per-run DB, template DB + data-source schema, request env mirror for tools |
 | `calendar_tool.py` | Free slots + Deep Work blocks (timezone-aware vs Calendar API) |
 | `auth_setup.py` | One-time OAuth → `token.json` for Calendar |
 | `test_member2.py` | Async test: Scrum tools + Notion + Calendar |
@@ -193,12 +212,13 @@ Writes sample docs to Firestore and prints retrieve output. Confirm data in the 
 | Symptom | What to check |
 |---------|----------------|
 | `FileNotFoundError` for service account | `GOOGLE_APPLICATION_CREDENTIALS` path is wrong or file missing; use an **absolute** path. |
-| `429` / `RESOURCE_EXHAUSTED` | Free tier is tiny for long tool loops. Set **`ADK_LITE=1`**, wait between runs, switch **`ADK_MODEL`**, or use **Vertex + billing/credits**. |
+| `429` / `RESOURCE_EXHAUSTED` | Wait between runs; **`ADK_LITE=1`**; try another **`ADK_MODEL`**; Vertex billing and quotas. Response may include **`quota_hint`**. See [ADK Gemini 429](https://google.github.io/adk-docs/agents/models/google-gemini/#error-code-429-resource_exhausted). |
 | Firestore permission errors | Service account has Firestore access on that project. |
 | Vertex errors | **Vertex AI API** enabled, **billing** on project, service account has **Vertex AI User**, `GOOGLE_CLOUD_PROJECT` / `GOOGLE_CLOUD_LOCATION` correct; **unset `GOOGLE_API_KEY`**. |
-| Notion `KeyError('properties')` or wrong schema | Set **`NOTION_DATA_SOURCE_ID`** from the database’s **Manage data sources**; ensure the integration can access the DB. |
-| Notion wrong column names | Set **`NOTION_PROP_*`** overrides or fix property titles in Notion. |
-| Calendar OAuth errors | **Calendar API** enabled; OAuth consent screen + **test users** if app is in testing; Desktop client id/secret in `.env`. |
+| Notion “Could not find page” / 404 on hub | **Connections**: open the Runs hub → **⋯** → connect your integration (not only “public to web”). Response includes **`notion_setup_hint`**. |
+| Notion `KeyError('properties')` / data source | Set **`NOTION_DATA_SOURCE_ID`** from **Manage data sources**; integration can access the database. |
+| Notion “Status / … is not a property” | Remove wrong **`NOTION_PROP_*`** values or match them to **`NOTION_DATABASE_ID`**. With Runs + Kanban DB mode, per-run schema is fetched automatically. |
+| Calendar OAuth errors | **Calendar API** enabled; OAuth consent + **test users** if needed; Desktop client id/secret in `.env`. |
 | `GET /` returns 404 | Confirm you are on port **8000** and hitting this app’s process. |
 
 ---

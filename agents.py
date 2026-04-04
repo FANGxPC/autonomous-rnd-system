@@ -45,6 +45,8 @@ scrum_master_agent = Agent(
     3. Call create_kanban_card for EACH task with: title, status='To Do', deadline, description.
     4. Return a summary listing every card created and every calendar block scheduled.
 
+    When using a Runs hub: tasks are added to that run's Notion page (to-do blocks), not the legacy RnD Task Board.
+
     Always create calendar blocks BEFORE Notion cards so deadlines are confirmed first.
     Use status 'To Do' for all new tasks.
     """,
