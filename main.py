@@ -139,8 +139,8 @@ async def root():
         "docs": "/docs",
         "pipeline": "POST /trigger-pipeline",
         "env": {
-            "ADK_LITE": "1 (default) = single-agent, fewer API calls. 0 = full sub-agents.",
-            "ADK_MODEL": "default gemini-2.5-flash; override in .env if 429.",
+            "ADK_LITE": "0 (default) = full Tech Lead + Research + Scrum. 1 = shorter prompt only (graph still full).",
+            "ADK_MODEL": "default gemini-2.5-flash; set in .env if you hit 429 or change backend.",
         },
         "example_body": {
             "prompt": "Design a 16-bit RISC processor in Verilog with ALU",
@@ -180,8 +180,8 @@ async def trigger_pipeline(request: TriggerRequest):
     meta = {
         "model": ADK_MODEL,
         "adk_lite": ADK_LITE,
-        "hint": "Set ADK_LITE=0 for full multi-agent flow (needs quota). "
-        "Set ADK_MODEL in .env if you hit 429 (e.g. gemini-2.5-flash).",
+        "hint": "Ensure .env (Firebase, Vertex/API, Notion, Calendar) and token.json for Calendar. "
+        "Set ADK_MODEL in .env if you hit 429.",
     }
 
     last_error: Exception | None = None
