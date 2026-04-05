@@ -1,5 +1,8 @@
+.env
 project_memory.db
 __pycache__/
 .adk_env/
 *.json
-!firebase-keys/*.json   # optional - but better to keep key outside completely
+!firebase-keys/*.json   # optional — keep real keys outside repo
+token.json
+credentials.json

@@ -1,7 +1,5 @@
 """
-MEMBER 3 - MEMORY ARCHITECT (Phase 1)
-File: database.py
-Database: Firebase Firestore (cloud, persistent)
+Persistent project memory: Firebase Firestore + ADK tool wrappers (memory_tools / memory_tools_phase3).
 """
 
 import os
@@ -9,11 +7,11 @@ from datetime import datetime
 from dotenv import load_dotenv
 import firebase_admin
 from firebase_admin import credentials, firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 load_dotenv()
 
-# ====================== FIREBASE INITIALIZATION ======================
-# Initialize only once
+# Firebase init (once per process)
 if not firebase_admin._apps:
     cred_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
     if not cred_path or not os.path.exists(cred_path):
@@ -21,12 +19,9 @@ if not firebase_admin._apps:
     
     cred = credentials.Certificate(cred_path)
     firebase_admin.initialize_app(cred)
-    print("✅ Firebase Admin SDK initialized successfully!")
 
 db = firestore.client()
 
-
-# ====================== CORE FUNCTIONS ======================
 
 def save_project_context(project_key: str, category: str, value: str, notes: str = "") -> str:
     """
@@ -61,14 +56,18 @@ def retrieve_context(project_key: str, category: str = None) -> str:
     Otherwise → all categories for the project.
     """
     try:
-        query = db.collection("project_memory").where("project_key", "==", project_key)
-        
+        query = db.collection("project_memory").where(
+            filter=FieldFilter("project_key", "==", project_key)
+        )
         if category:
-            query = query.where("category", "==", category)
-        
-        docs = query.order_by("timestamp", direction=firestore.Query.DESCENDING).stream()
-        
-        results = list(docs)
+            query = query.where(filter=FieldFilter("category", "==", category))
+
+        snapshots = list(query.stream())
+        snapshots.sort(
+            key=lambda d: (d.to_dict() or {}).get("timestamp") or "",
+            reverse=True,
+        )
+        results = snapshots
         if not results:
             return f"No memory found for project: {project_key}"
         
@@ -76,10 +75,10 @@ def retrieve_context(project_key: str, category: str = None) -> str:
         output += "=" * 60 + "\n"
         
         for doc in results:
-            data = doc.to_dict()
-            ts = data["timestamp"][:19]
-            cat = data["category"].upper()
-            val = data["value"]
+            data = doc.to_dict() or {}
+            ts = (data.get("timestamp") or "")[:19]
+            cat = (data.get("category") or "").upper()
+            val = data.get("value", "")
             notes = data.get("notes", "")
             
             output += f"[{ts}] {cat}: {val}\n"
@@ -122,7 +121,6 @@ def log_run_history(summary: str, prompt: str = ""):
         pass
 
 
-# ====================== SELF-TEST ======================
 def run_test():
     print("\n🧪 Running Firebase Memory Test...\n")
     project = "verilog_alu_demo"
@@ -146,8 +144,7 @@ def run_test():
 if __name__ == "__main__":
     run_test()
 
-# ====================== PHASE 2: ADK TOOL WRAPPERS ======================
-# Plain functions work as tools: LlmAgent wraps callables with FunctionTool.
+# ADK tool wrappers (plain functions → FunctionTool in Agent)
 
 def save_project_context_tool(
     project_key: str, 
@@ -197,7 +194,6 @@ def log_run_history_tool(
     return "✅ Run history saved to Firestore"
 
 
-# ====================== EXPORT FOR MEMBER 1 ======================
 memory_tools = [
     save_project_context_tool,
     retrieve_context_tool,
@@ -205,12 +201,6 @@ memory_tools = [
     log_run_history_tool
 ]
 
-print("✅ Member 3 Phase 2 Complete!")
-print("Member 1 can now import:")
-print("   from database import memory_tools")
-print("Then add: tools=memory_tools  to Tech_Lead agent")
-
-# ====================== PHASE 3: ADVANCED FEATURES & POLISH ======================
 
 def list_all_projects() -> str:
     """List all unique project_keys in memory (useful for Tech Lead)"""
@@ -237,10 +227,12 @@ def list_all_projects() -> str:
 def clear_project_memory(project_key: str, category: str = None) -> str:
     """Delete memory for a specific project or category"""
     try:
-        query = db.collection("project_memory").where("project_key", "==", project_key)
+        query = db.collection("project_memory").where(
+            filter=FieldFilter("project_key", "==", project_key)
+        )
         if category:
-            query = query.where("category", "==", category)
-        
+            query = query.where(filter=FieldFilter("category", "==", category))
+
         docs = query.stream()
         deleted_count = 0
         for doc in docs:
@@ -255,15 +247,21 @@ def clear_project_memory(project_key: str, category: str = None) -> str:
 def get_memory_summary(project_key: str) -> str:
     """Get a clean summary of all categories for a project"""
     try:
-        docs = db.collection("project_memory").where("project_key", "==", project_key)\
-                .order_by("timestamp", direction=firestore.Query.DESCENDING).stream()
-        
+        q = db.collection("project_memory").where(
+            filter=FieldFilter("project_key", "==", project_key)
+        )
+        snapshots = list(q.stream())
+        snapshots.sort(
+            key=lambda d: (d.to_dict() or {}).get("timestamp") or "",
+            reverse=True,
+        )
         summary = {}
-        for doc in docs:
-            data = doc.to_dict()
-            cat = data["category"]
-            if cat not in summary:
-                summary[cat] = data["value"]
+        for doc in snapshots:
+            data = doc.to_dict() or {}
+            cat = data.get("category")
+            if not cat or cat in summary:
+                continue
+            summary[cat] = data.get("value", "")
         
         output = f"📊 MEMORY SUMMARY FOR: {project_key}\n"
         output += "=" * 50 + "\n"
@@ -274,7 +272,6 @@ def get_memory_summary(project_key: str) -> str:
         return f"❌ Summary Error: {str(e)}"
 
 
-# ====================== IMPROVED ERROR HANDLING ======================
 
 def safe_save_project_context(project_key: str, category: str, value: str, notes: str = "") -> str:
     """Safe version with retry (recommended for agents)"""
@@ -288,7 +285,6 @@ def safe_save_project_context(project_key: str, category: str, value: str, notes
             time.sleep(1)
 
 
-# ====================== FINAL EXPORTS ======================
 memory_tools_phase3 = [
     save_project_context_tool,
     retrieve_context_tool,
@@ -299,6 +295,3 @@ memory_tools_phase3 = [
     get_memory_summary
 ]
 
-print("✅ Member 3 Phase 3 Complete!")
-print("Advanced tools added: list_all_projects, clear_project_memory, get_memory_summary")
-print("Use memory_tools_phase3 for full feature set")

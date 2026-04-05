@@ -1,0 +1,11 @@
+google-adk
+fastapi
+uvicorn[standard]
+pydantic
+python-dotenv
+firebase-admin
+rich
+notion-client
+google-api-python-client
+google-auth-httplib2
+google-auth-oauthlib
