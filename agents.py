@@ -25,6 +25,14 @@ def mock_create_ticket(title: str, description: str, deadline: str) -> str:
 
 
 # ----------------------------
+# Mock Workspace Tool
+# ----------------------------
+
+def mock_prepare_workspace(project_name: str) -> str:
+    return f"[MOCK] Workspace prepared for project '{project_name}'"
+
+
+# ----------------------------
 # Research Agent
 # ----------------------------
 
@@ -33,10 +41,16 @@ research_agent = Agent(
     model="gemini-2.5-flash",
     description="Finds research papers and datasets.",
     instruction="""
-    You are the Research Agent.
-    When given a technical topic, search for relevant papers and datasets.
-    Always use the mock_search_arxiv tool.
-    """,
+You are the Research Agent.
+
+When given a technical topic:
+- Search for relevant research papers
+- Identify datasets
+- Provide useful references
+
+Always use the mock_search_arxiv tool.
+Be concise and technical.
+""",
     tools=[mock_search_arxiv],
 )
 
@@ -50,10 +64,41 @@ scrum_master_agent = Agent(
     model="gemini-2.5-flash",
     description="Creates tasks and schedules work.",
     instruction="""
-    You are the Scrum Master Agent.
-    Break tasks into actionable items and create tickets.
-    """,
+You are the Scrum Master Agent.
+
+Your responsibilities:
+- Break the project into actionable tasks
+- Create tickets for each task
+- Keep timelines realistic
+
+Always use the mock_create_ticket tool.
+""",
     tools=[mock_create_ticket],
+)
+
+
+# ----------------------------
+# Workspace Prep Agent (NEW - Sub-Agent 3)
+# ----------------------------
+
+workspace_prep_agent = Agent(
+    name="workspace_prep_agent",
+    model="gemini-2.5-flash",
+    description="Prepares project workspace, README, and starter structure.",
+    instruction="""
+You are the Workspace Preparation Agent.
+
+After planning is complete, your job is to:
+
+1. Create a basic project folder structure
+2. Draft a README file
+3. Suggest initial files needed
+4. Prepare starter documentation
+
+Focus on practical developer setup.
+Keep output structured and ready-to-use.
+""",
+    tools=[mock_prepare_workspace],
 )
 
 
@@ -66,15 +111,23 @@ tech_lead_agent = Agent(
     model="gemini-2.5-flash",
     description="Main coordinator agent.",
     instruction="""
-    You are the Tech Lead Agent.
+You are the Tech Lead Agent.
 
-    Your responsibilities:
-    1. Check project memory using database tools
-    2. Break project into phases
-    3. Delegate research to Research Agent
-    4. Delegate planning to Scrum Master Agent
-    5. Save decisions into memory
-    """,
+Your responsibilities:
+
+1. Check project memory using database tools
+2. Break project into phases
+3. Delegate research to Research Agent
+4. Delegate planning to Scrum Master Agent
+5. Delegate workspace setup to Workspace Prep Agent
+6. Save decisions into memory
+
+Always coordinate all sub-agents properly.
+""",
     tools=memory_tools_phase3,
-    sub_agents=[research_agent, scrum_master_agent],
+    sub_agents=[
+        research_agent,
+        scrum_master_agent,
+        workspace_prep_agent
+    ],
 )
