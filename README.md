@@ -8,7 +8,7 @@
 
 | Area | Status |
 |------|--------|
-| **API** | `GET /` — quick info and example JSON · `GET /docs` — Swagger · **`POST /trigger-pipeline`** — runs the agent pipeline |
+| **API** | **`GET /`** — web UI (static `frontend/`) · **`GET /api`** — JSON service info · **`GET /health`** — probe · **`GET /docs`** — Swagger · **`POST /trigger-pipeline`** — agent pipeline · **`/mcp/`** — **MCP** (Streamable HTTP); **`/mcp`** → **`/mcp/`** |
 | **Agents (ADK)** | **Tech Lead** root with **Research**, **Scrum Master**, and **Workspace Prep** sub-agents (always). `ADK_LITE` only changes the **user prompt** in `main.py`; it does **not** remove sub-agents. |
 | **Memory** | Firestore collections: `project_memory`, `action_logs`, `run_history` |
 | **Tools** | Firestore (`database.py`) · **Web search** (`research_tool.search_web_snippets`, **`ddgs`** metasearch, no API key) · **arXiv** (optional in `research_tool.py`) · **Notion** (`notion_tool.py`) · **Calendar** (`calendar_tool.py`) · **Disk** (`workspace_tool.py`). |
@@ -61,7 +61,8 @@ python auth_setup.py
 python main.py
 ```
 
-Then open **http://localhost:8000/docs** → **POST `/trigger-pipeline`** with a JSON body (`prompt`, `deadline`, `project_key`).  
+Then open **http://localhost:8000/** for the **web UI** (same origin as the API), or **http://localhost:8000/docs** for Swagger. **`GET /api`** returns JSON service metadata.  
+**Docker / Cloud Run:** see **[DEPLOY.md](./DEPLOY.md)**.  
 Optional: `python database.py` to sanity-check Firestore; `python test_member2.py` to exercise Scrum + Notion + Calendar.
 
 **Workspace output:** After a run that delegates to Workspace Prep, check **`generated_workspaces/`** (or `WORKSPACE_OUTPUT_DIR` in `.env`). That folder is gitignored.
@@ -117,7 +118,7 @@ source .adk_env/bin/activate    # Windows: .adk_env\Scripts\activate
 pip install -r requirements.txt
 ```
 
-`requirements.txt` includes: `google-adk`, `fastapi`, `uvicorn`, `pydantic`, `python-dotenv`, `firebase-admin`, `rich`, `notion-client`, **`ddgs`**, `google-api-python-client`, `google-auth-httplib2`, `google-auth-oauthlib`.
+`requirements.txt` includes: `google-adk`, `fastapi`, **`fastmcp`**, `uvicorn`, `pydantic`, `python-dotenv`, `firebase-admin`, `rich`, `notion-client`, **`ddgs`**, `google-api-python-client`, `google-auth-httplib2`, `google-auth-oauthlib`.
 
 ### 3. Firebase / Firestore
 
@@ -156,6 +157,7 @@ Edit **`.env`**:
 | `WEB_SEARCH_BACKEND` | Optional; default `auto`. Try `bing` if searches often return no results. |
 | `ARXIV_MAX_RESULTS` | Optional; default `5` (cap 15). Papers per `search_arxiv` (fallback). |
 | `WORKSPACE_OUTPUT_DIR` | Optional; default `generated_workspaces` — root for `prepare_project_workspace`. |
+| `MCP_AUTH_TOKEN` | Optional. If set, MCP at **`/mcp/`** requires **`Authorization: Bearer <token>`** or **`X-MCP-API-Key: <token>`**. If unset or empty, **`/mcp/` is open** (local dev only). |
 
 **Vertex (typical hackathon with credits):**
 
@@ -198,6 +200,42 @@ python main.py
 
 - **App:** [http://localhost:8000](http://localhost:8000) — JSON info and example body  
 - **Swagger:** [http://localhost:8000/docs](http://localhost:8000/docs) — use **POST `/trigger-pipeline`**
+- **MCP:** [http://127.0.0.1:8000/mcp/](http://127.0.0.1:8000/mcp/) — same process as the API; see below.
+
+### 5b. MCP (FastMCP) — URL and testing
+
+**Exact path (same origin as the UI/API):**
+
+| Environment | MCP base URL |
+|-------------|----------------|
+| Local default (`python main.py`) | **`http://127.0.0.1:8000/mcp/`** (trailing slash; required by the ASGI mount) |
+| Cloud Run | **`https://<your-service-host>/mcp/`** |
+
+**`/mcp`** without a trailing slash responds with **307** to **`/mcp/`** so clients that only know the short path still work.
+
+Implementation: `mcp_bridge.py` builds a **FastMCP** server and `main.py` mounts its HTTP ASGI app at **`/mcp`** (before the static **`/`** catch-all). Tools mirror research, Firestore memory, Notion Kanban, and Calendar helpers used by the ADK agents.
+
+**Auth:** If **`MCP_AUTH_TOKEN`** is set in the environment, every MCP HTTP request must include either:
+
+- **`Authorization: Bearer <MCP_AUTH_TOKEN>`**, or  
+- **`X-MCP-API-Key: <MCP_AUTH_TOKEN>`**
+
+Otherwise the server responds with **401** JSON. If **`MCP_AUTH_TOKEN`** is unset or empty, **`/mcp/` is unauthenticated** — use only on trusted localhost.
+
+**How to test**
+
+1. **Start the server** the same way as always: `python main.py` (or Docker / Cloud Run). MCP is not a separate service.
+2. **List tools** with the FastMCP CLI (after `pip install -r requirements.txt`):
+
+```bash
+# No token (only when MCP_AUTH_TOKEN is unset)
+fastmcp list http://127.0.0.1:8000/mcp/ -t http
+
+# With a shared secret (same value as MCP_AUTH_TOKEN on the server)
+fastmcp list http://127.0.0.1:8000/mcp/ -t http --auth your-judge-secret
+```
+
+The CLI sends the token as a **Bearer** token; the server also accepts **`X-MCP-API-Key`** for non–FastMCP clients. If `fastmcp list` is not available, use any MCP-over-HTTP client pointed at that URL with the same headers. **`GET /health`** and **`POST /trigger-pipeline`** are unchanged — MCP and the agent pipeline are independent surfaces on one app.
 
 ### 6. Test Firestore without the full app (optional)
 
@@ -238,7 +276,8 @@ Writes sample docs to Firestore and prints retrieve output. Confirm data in the 
 
 | File | Role |
 |------|------|
-| `main.py` | FastAPI app, `InMemoryRunner`, session per `project_key`, Notion run workspace before agent, **Notion guard** (nudges if Kanban cards missing), Rich logging, Vertex/Gemini **429** retries with backoff, friendly Notion API errors |
+| `main.py` | FastAPI app, static **`frontend/`** at **`/`**, **`/mcp/`** MCP mount (+ **`/mcp`** → **`/mcp/`** redirect), **`/health`**, **`/api`**, CORS, `InMemoryRunner`, Notion run workspace, **Notion guard**, Rich logging, Vertex/Gemini **429** retries, friendly Notion API errors |
+| `mcp_bridge.py` | **FastMCP** HTTP app + optional **`MCP_AUTH_TOKEN`** gate; tools delegate to `research_tool`, `database`, `notion_tool`, `calendar_tool` |
 | `agents.py` | ADK agents: Tech Lead (must delegate to Scrum for deadline-bearing project work), Research (concise bullets), Scrum (Notion + Calendar + **`sources`** on cards), Workspace Prep (disk) |
 | `research_tool.py` | `search_web_snippets` (**`ddgs`**, backend fallbacks) · `search_arxiv` (optional) |
 | `workspace_tool.py` | `prepare_project_workspace` — `docs/`, `src/`, README under `WORKSPACE_OUTPUT_DIR` |
@@ -248,6 +287,8 @@ Writes sample docs to Firestore and prints retrieve output. Confirm data in the 
 | `auth_setup.py` | One-time OAuth → `token.json` for Calendar |
 | `test_member2.py` | Async test: Scrum tools + Notion + Calendar |
 | `requirements.txt` | Python dependencies |
+| `Dockerfile` | Container image: uvicorn on **`$PORT`**, ships **`frontend/`** with the API |
+| `DEPLOY.md` | Cloud Run / Docker smoke tests and route reference |
 | `.env.example` | Template for secrets and flags (copy to `.env`) |
 
 ### Imports for teammates
@@ -271,7 +312,7 @@ Writes sample docs to Firestore and prints retrieve output. Confirm data in the 
 | Run page opens but **no Kanban cards** | Check JSON **`notion.kanban_cards_created`** and **`meta.notion_guard_warning`**. Confirm **`scrum_master_agent`** / **`create_kanban_card`** appear in logs; fix Calendar OAuth if Scrum fails early. |
 | Web search empty or flaky | Set **`WEB_SEARCH_BACKEND=bing`**, increase **`WEB_SEARCH_TIMEOUT`**; confirm **`pip install ddgs`** and remove old **`duckduckgo-search`**. |
 | Calendar OAuth errors | **Calendar API** enabled; OAuth consent + **test users** if needed; Desktop client id/secret in `.env`. |
-| `GET /` returns 404 | Confirm you are on port **8000** and hitting this app’s process. |
+| UI or `/health` returns 404 | Confirm port (**`PORT`** / default **8000**) and that **`frontend/`** exists in the deployed image. |
 
 ---
 
@@ -279,6 +320,7 @@ Writes sample docs to Firestore and prints retrieve output. Confirm data in the 
 
 - **Never commit** `.env`, **`token.json`**, or service account JSON (use `.gitignore`).
 - Restrict Firestore rules before any public deployment.
+- For any **public** URL (e.g. Cloud Run), set **`MCP_AUTH_TOKEN`** and pass the header from judges’ MCP clients. An empty or missing token leaves **`/mcp/`** open.
 
 ---
 

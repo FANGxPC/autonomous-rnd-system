@@ -5,8 +5,10 @@ FastAPI + ADK Runner: POST /trigger-pipeline runs the multi-agent graph and retu
 """
 
 import asyncio
+import os
 import re
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
@@ -15,7 +17,11 @@ load_dotenv()
 
 import uvicorn
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
+from starlette.requests import Request
+from starlette.responses import RedirectResponse
 from google.adk.runners import InMemoryRunner
 from google.genai import types
 from notion_client.errors import APIResponseError
@@ -26,13 +32,40 @@ from rich.rule import Rule
 
 from agents import ADK_LITE, ADK_MODEL, tech_lead_agent
 from database import log_run_history
+from mcp_bridge import mcp_http_asgi, mcp_http_lifespan
 from notion_tool import begin_notion_run_workspace, end_notion_run_workspace
 
 app = FastAPI(
     title="Deep-Tech Sprint - Autonomous R&D System",
     description="Google Gen AI APAC Hackathon — POST /trigger-pipeline to run the ADK agent pipeline.",
     version="1.0",
+    lifespan=mcp_http_lifespan,
 )
+
+# Split dev (UI on :3000 etc.) + optional extra origins from CORS_ALLOW_ORIGINS (comma-separated)
+_cors_origins = [
+    "http://127.0.0.1:3000",
+    "http://localhost:3000",
+    "http://127.0.0.1:5500",
+    "http://localhost:5500",
+    "http://127.0.0.1:8080",
+    "http://localhost:8080",
+]
+for _part in os.getenv("CORS_ALLOW_ORIGINS", "").split(","):
+    _o = _part.strip()
+    if _o and _o not in _cors_origins:
+        _cors_origins.append(_o)
+
+_cors_kw: dict[str, Any] = {
+    "allow_origins": _cors_origins,
+    "allow_credentials": True,
+    "allow_methods": ["*"],
+    "allow_headers": ["*"],
+}
+_cors_rx = os.getenv("CORS_ALLOW_ORIGIN_REGEX", "").strip()
+if _cors_rx:
+    _cors_kw["allow_origin_regex"] = _cors_rx
+app.add_middleware(CORSMiddleware, **_cors_kw)
 
 console = Console()
 
@@ -124,6 +157,60 @@ def _pipeline_created_notion_cards(events: list[Any]) -> bool:
     return False
 
 
+_CALENDAR_EVENT_URL_RE = re.compile(
+    r"https://www\.google\.com/calendar/event\?[^\s\)\]\"']+",
+    re.IGNORECASE,
+)
+
+
+def _strings_from_model_event(event: Any) -> list[str]:
+    out: list[str] = []
+    content = getattr(event, "content", None)
+    if not content:
+        return out
+    for part in getattr(content, "parts", None) or []:
+        if getattr(part, "text", None):
+            out.append(part.text)
+        fr = getattr(part, "function_response", None)
+        if fr is not None:
+            r = getattr(fr, "response", None)
+            if r is not None:
+                out.append(str(r))
+    return out
+
+
+def _extract_calendar_event_links(
+    events: list[Any], outcome_text: str
+) -> list[str]:
+    """Collect Google Calendar event URLs from tool output and final summary."""
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for ev in events:
+        for s in _strings_from_model_event(ev):
+            for m in _CALENDAR_EVENT_URL_RE.finditer(s):
+                u = m.group(0).rstrip(".,);]")
+                if u not in seen:
+                    seen.add(u)
+                    ordered.append(u)
+    for m in _CALENDAR_EVENT_URL_RE.finditer(outcome_text or ""):
+        u = m.group(0).rstrip(".,);]")
+        if u not in seen:
+            seen.add(u)
+            ordered.append(u)
+    return ordered
+
+
+def _notion_hub_page_url() -> str | None:
+    """Public URL for NOTION_RUNS_PARENT_PAGE_ID (Runs hub), if configured."""
+    raw = os.getenv("NOTION_RUNS_PARENT_PAGE_ID", "").strip()
+    if not raw:
+        return None
+    nid = re.sub(r"[^0-9a-fA-F]", "", raw)
+    if len(nid) != 32:
+        return None
+    return f"https://www.notion.so/{nid}"
+
+
 _NOTION_GUARD_MAX_NUDGES = 2
 
 
@@ -175,12 +262,20 @@ async def _ensure_session(runner: InMemoryRunner, user_id: str, session_id: str)
     )
 
 
-@app.get("/")
-async def root():
+@app.get("/health")
+async def health():
+    """Cloud Run / load balancer probe."""
+    return {"status": "ok"}
+
+
+@app.get("/api")
+async def api_info():
+    """JSON service info (UI is served at / when frontend/ is present)."""
     return {
         "service": "Deep-Tech Sprint API",
         "docs": "/docs",
         "pipeline": "POST /trigger-pipeline",
+        "health": "/health",
         "env": {
             "ADK_LITE": "0 = default. 1 = leaner tool use; Scrum/Notion still required for project work with deadlines.",
             "ADK_MODEL": "default gemini-2.5-flash; set in .env if you hit 429 or change backend.",
@@ -368,6 +463,12 @@ async def trigger_pipeline(request: TriggerRequest):
                         body["notion"]["kanban_database_id"] = notion_run[
                             "kanban_database_id"
                         ]
+                    _hub = _notion_hub_page_url()
+                    if _hub:
+                        body["notion"]["hub_page_url"] = _hub
+                _cal = _extract_calendar_event_links(events, outcome_text)
+                if _cal:
+                    body["calendar_event_links"] = _cal
                 await runner.close()
                 return JSONResponse(content=body)
 
@@ -415,12 +516,46 @@ async def trigger_pipeline(request: TriggerRequest):
                         err_body["notion"]["kanban_database_id"] = notion_run[
                             "kanban_database_id"
                         ]
+                    _hub_e = _notion_hub_page_url()
+                    if _hub_e:
+                        err_body["notion"]["hub_page_url"] = _hub_e
                 return JSONResponse(status_code=200, content=err_body)
     finally:
         end_notion_run_workspace(notion_reset_token)
 
 
+_FRONTEND_DIR = Path(__file__).resolve().parent / "frontend"
+# Starlette Mount matches /mcp/{path}; bare /mcp must redirect to /mcp/
+@app.api_route(
+    "/mcp",
+    methods=["GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    include_in_schema=False,
+)
+async def _mcp_redirect_slash(request: Request) -> RedirectResponse:
+    q = request.url.query
+    return RedirectResponse(f"/mcp/{('?' + q) if q else ''}", status_code=307)
+
+
+# MCP over HTTP (Streamable HTTP) — mount before catch-all static files
+app.mount("/mcp", mcp_http_asgi)
+if _FRONTEND_DIR.is_dir():
+    app.mount(
+        "/",
+        StaticFiles(directory=str(_FRONTEND_DIR), html=True),
+        name="frontend",
+    )
+
+
 if __name__ == "__main__":
-    console.print("[bold]Starting[/bold] [link=http://localhost:8000]http://localhost:8000[/link]")
-    console.print("Docs: [link=http://localhost:8000/docs]http://localhost:8000/docs[/link]")
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    _port = int(os.environ.get("PORT", "8000"))
+    _host = os.environ.get("HOST", "0.0.0.0")
+    _url = f"http://127.0.0.1:{_port}"
+    console.print(f"[bold]Starting[/bold] [link={_url}]{_url}[/link]")
+    console.print(f"Docs: [link={_url}/docs]{_url}/docs[/link]")
+    if _FRONTEND_DIR.is_dir():
+        console.print(f"UI: [link={_url}/]{_url}/[/link] (same origin as API)")
+    console.print(
+        f"MCP: [link={_url}/mcp/]{_url}/mcp/[/link] "
+        f"({'Bearer + MCP_AUTH_TOKEN' if os.getenv('MCP_AUTH_TOKEN', '').strip() else 'no MCP_AUTH_TOKEN — open'})"
+    )
+    uvicorn.run(app, host=_host, port=_port)

@@ -907,7 +907,7 @@ def list_kanban_cards(status_filter: str = "") -> str:
                 query_args["filter"] = {
                     "property": st_name,
                     "select": {"equals": status_filter},
-            }
+                }
 
         results = _notion.databases.query(**query_args).get("results", [])
 
