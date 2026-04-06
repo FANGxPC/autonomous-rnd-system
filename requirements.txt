@@ -1,5 +1,6 @@
 google-adk
 fastapi
+fastmcp>=2.0
 uvicorn[standard]
 pydantic
 python-dotenv

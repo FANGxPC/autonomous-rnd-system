@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Deep-Tech Sprint — Run pipeline</title>
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div class="page" id="page-root">
+      <header class="header">
+        <p class="eyebrow">Autonomous R&amp;D system</p>
+        <h1 class="title">Deep-Tech Sprint</h1>
+      </header>
+
+      <main class="card" id="main-card">
+        <div id="form-panel">
+          <form id="pipeline-form" class="form" novalidate>
+            <div class="field">
+              <label class="label" for="description">Project description</label>
+              <textarea
+                id="description"
+                name="description"
+                class="input textarea"
+                rows="6"
+                spellcheck="true"
+                placeholder="e.g. Design a minimal 4-bit ripple-carry adder in Verilog with a testbench; cite references where useful."
+                autocomplete="off"
+              ></textarea>
+            </div>
+
+            <div class="field">
+              <label class="label" for="deadline">Deadline</label>
+              <input
+                id="deadline"
+                name="deadline"
+                type="date"
+                class="input"
+                aria-label="Project deadline date"
+              />
+              <p class="hint">Choose the target date for this sprint or milestone.</p>
+            </div>
+
+            <div class="field">
+              <label class="label" for="project-key">Project key</label>
+              <input
+                id="project-key"
+                name="project_key"
+                type="text"
+                class="input"
+                inputmode="text"
+                autocapitalize="none"
+                autocomplete="off"
+                placeholder="e.g. verilog_4bit_adder"
+                pattern="[a-zA-Z0-9_-]+"
+                title="Letters, numbers, underscores, and hyphens only"
+              />
+              <p class="hint">
+                Short id for this run (memory &amp; session scope). Use
+                lowercase, no spaces.
+              </p>
+            </div>
+
+            <p id="form-status" class="form-status" role="status" aria-live="polite"></p>
+
+            <button type="submit" class="submit" id="submit-btn">
+              Run pipeline
+            </button>
+          </form>
+        </div>
+
+        <div id="results-panel" class="results-panel hidden" aria-live="polite">
+          <div class="results-toolbar">
+            <button type="button" class="btn-secondary" id="new-run-btn">
+              ← New run
+            </button>
+          </div>
+
+          <div id="results-banner" class="results-banner" role="status"></div>
+
+          <section class="results-section" id="summary-section">
+            <h2 class="results-section-title">Summary</h2>
+            <div id="summary-text" class="summary-text"></div>
+          </section>
+
+          <section class="results-section hidden" id="notion-section">
+            <h2 class="results-section-title">Notion</h2>
+            <p class="results-section-lead">
+              Open in Notion (log in if your workspace is private).
+            </p>
+            <div class="link-cards" id="notion-link-cards"></div>
+          </section>
+
+          <section class="results-section hidden" id="calendar-section">
+            <h2 class="results-section-title">Google Calendar</h2>
+            <p class="results-section-lead">
+              Deep Work blocks created during this run (open event or add to Calendar).
+            </p>
+            <div class="link-cards" id="calendar-link-cards"></div>
+          </section>
+
+        </div>
+      </main>
+    </div>
+    <script>
+      if (typeof window.API_BASE === "undefined") {
+        window.API_BASE = "";
+      }
+    </script>
+    <script src="app.js"></script>
+  </body>
+</html>
