@@ -53,13 +53,18 @@ def _user_message(req: TriggerRequest) -> str:
     if ADK_LITE:
         return (
             base
-            + "Follow LITE instructions: you have all tools yourself — no sub-agent transfers. "
-            "Minimize tool calls to avoid API rate limits."
+            + "LITE / quota mode: avoid redundant tool calls (one memory pass when enough; don't repeat "
+            "the same search). You still MUST transfer to scrum_master_agent for Notion Kanban cards "
+            "and Google Calendar whenever the request is project work and a deadline is present. "
+            "Transfer to research_agent only when citations or URLs are needed. "
+            "After research_agent returns, your next step must be scrum_master_agent — not a solo summary."
         )
     return (
         base
         + "Save requirements and deadline to Firestore, retrieve any prior context, "
-        "then coordinate research and planning via sub-agents."
+        "then coordinate research and planning via sub-agents. "
+        "If you use research_agent, your next step after research returns must be scrum_master_agent "
+        "(Notion + Calendar); do not end the run on research output alone."
     )
 
 
@@ -104,6 +109,22 @@ def _extract_outcome(events: list[Any]) -> str:
         if t:
             return t
     return ""
+
+
+def _pipeline_created_notion_cards(events: list[Any]) -> bool:
+    """True if any model turn invoked create_kanban_card (Scrum → Notion)."""
+    for event in events:
+        content = getattr(event, "content", None)
+        if not content:
+            continue
+        for part in getattr(content, "parts", None) or []:
+            fc = getattr(part, "function_call", None)
+            if fc is not None and getattr(fc, "name", "") == "create_kanban_card":
+                return True
+    return False
+
+
+_NOTION_GUARD_MAX_NUDGES = 2
 
 
 def _log_event(event: Any) -> None:
@@ -161,7 +182,7 @@ async def root():
         "docs": "/docs",
         "pipeline": "POST /trigger-pipeline",
         "env": {
-            "ADK_LITE": "0 (default) = full Tech Lead + Research + Scrum. 1 = shorter prompt only (graph still full).",
+            "ADK_LITE": "0 = default. 1 = leaner tool use; Scrum/Notion still required for project work with deadlines.",
             "ADK_MODEL": "default gemini-2.5-flash; set in .env if you hit 429 or change backend.",
         },
         "example_body": {
@@ -265,6 +286,35 @@ async def trigger_pipeline(request: TriggerRequest):
                     events.append(event)
                     _log_event(event)
 
+                guard_i = 0
+                while (
+                    notion_run
+                    and not _pipeline_created_notion_cards(events)
+                    and guard_i < _NOTION_GUARD_MAX_NUDGES
+                ):
+                    guard_i += 1
+                    console.print(
+                        "[yellow]Notion guard: no create_kanban_card yet — "
+                        f"nudging Tech Lead ({guard_i}/{_NOTION_GUARD_MAX_NUDGES})[/yellow]"
+                    )
+                    nudge = (
+                        "System reminder (pipeline guard): A Notion run workspace is active for this "
+                        "request, but **create_kanban_card** was never called. You MUST "
+                        "**transfer_to_agent** with agent_name **scrum_master_agent** now. "
+                        "Scrum must call **create_kanban_card** at least twice (real tasks) using "
+                        f"deadline **{request.deadline}** and the user’s project scope. "
+                        "Do not reply with only documentation; update the board first, then summarize."
+                    )
+                    async for event in runner.run_async(
+                        user_id=user_id,
+                        session_id=session.id,
+                        new_message=types.UserContent(
+                            parts=[types.Part(text=nudge)]
+                        ),
+                    ):
+                        events.append(event)
+                        _log_event(event)
+
                 outcome_text = _extract_outcome(events)
                 finished = datetime.now().isoformat()
 
@@ -276,6 +326,27 @@ async def trigger_pipeline(request: TriggerRequest):
                 except Exception:
                     pass
 
+                cards_ok = _pipeline_created_notion_cards(events)
+                meta_out = {
+                    **meta,
+                    **(
+                        {
+                            "notion_kanban_cards_created": cards_ok,
+                            "notion_guard_nudges": guard_i,
+                        }
+                        if notion_run
+                        else {}
+                    ),
+                }
+                if notion_run and not cards_ok:
+                    meta_out = {
+                        **meta_out,
+                        "notion_guard_warning": (
+                            "Per-run Notion workspace was opened but no create_kanban_card ran "
+                            f"after {guard_i} guard nudge(s). Check Scrum/Calendar tools and logs."
+                        ),
+                    }
+
                 body = {
                     "status": "success",
                     "input": payload_in,
@@ -283,7 +354,7 @@ async def trigger_pipeline(request: TriggerRequest):
                         "summary": outcome_text,
                         "event_count": len(events),
                     },
-                    "meta": meta,
+                    "meta": meta_out,
                     "started_at": started,
                     "finished_at": finished,
                 }
@@ -291,6 +362,7 @@ async def trigger_pipeline(request: TriggerRequest):
                     body["notion"] = {
                         "run_page_url": notion_run["run_page_url"],
                         "run_page_id": notion_run["run_page_id"],
+                        "kanban_cards_created": cards_ok,
                     }
                     if notion_run.get("kanban_database_id"):
                         body["notion"]["kanban_database_id"] = notion_run[
