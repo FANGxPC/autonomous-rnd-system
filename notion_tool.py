@@ -904,7 +904,7 @@ def list_kanban_cards(status_filter: str = "") -> str:
                     "status": {"equals": status_filter},
                 }
             else:
-            query_args["filter"] = {
+                query_args["filter"] = {
                     "property": st_name,
                     "select": {"equals": status_filter},
             }
