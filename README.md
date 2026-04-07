@@ -9,7 +9,7 @@
 | **Primary agent + sub-agents** | **Tech Lead** delegates to **Research**, and **Scrum Master**. |
 | **Structured database** | **Firestore** — project memory, action logs, run history (read/write via agent tools). |
 | **MCP + real tools** | **`/mcp/`** exposes the same capabilities; **Google Calendar** (blocks/slots), **Notion** (Kanban / run pages), **web + arXiv** research. |
-| **Multi-step workflows** | One **`POST /trigger-pipeline`** run chains memory → research (when needed) → Scrum (tasks + calendar) → optional workspace folders. |
+| **Multi-step workflows** | One **`POST /trigger-pipeline`** run chains memory → research (when needed) → Scrum (tasks + calendar) 
 | **API-first deployment** | **FastAPI** + **Swagger**; ships to **Cloud Run** as a single HTTP service. |
 
 **Goal:** Show agents, tools, and persisted context working together on a realistic planning workflow (not a single-shot chat reply).
@@ -31,7 +31,6 @@ flowchart LR
   TL --> FS[(Firestore)]
   TL --> R[Research]
   TL --> S[Scrum]
-  TL --> W[Workspace]
 ```
 
 ---
