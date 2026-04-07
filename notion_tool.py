@@ -27,7 +27,7 @@ from notion_client import Client
 
 load_dotenv()
 
-_notion = Client(auth=os.environ["NOTION_TOKEN"])
+_notion = Client(auth=os.environ.get("NOTION_TOKEN", ""))
 
 # Notion rich_text content max ~2000; stay under for safety.
 _NOTION_RICHTEXT_MAX = 1990

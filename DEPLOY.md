@@ -55,7 +55,7 @@ If the container exits on import with **Notion** errors, ensure **`NOTION_TOKEN`
 ## Google Cloud Run (outline)
 
 1. **Enable APIs:** Cloud Run, Artifact Registry (or Container Registry), Secret Manager, Firestore, Vertex (if used).
-2. **Create secrets** in Secret Manager (examples): `notion-token`, `google-oauth-client-secret`, optional `calendar-refresh-token` / copy of needed values — **never** commit them.
+2. **Create secrets** in Secret Manager: upload your `token.json` file directly to a secret (e.g. `gcloud secrets create calendar-token --data-file=token.json`), plus any other variables you want hidden like `notion-token` or `google-oauth-client-secret` — **never** commit them.
 3. **Grant** the Cloud Run runtime service account **`secretmanager.secretAccessor`** on those secrets.
 4. **Build & push** (replace `PROJECT` and region):
 
@@ -72,7 +72,7 @@ gcloud run deploy deep-tech-sprint \
   --port 8080 \
   --allow-unauthenticated \
   --set-env-vars "GOOGLE_GENAI_USE_VERTEXAI=1,GOOGLE_CLOUD_PROJECT=PROJECT,GOOGLE_CLOUD_LOCATION=us-central1,..." \
-  --set-secrets "NOTION_TOKEN=notion-token:latest,GOOGLE_CLIENT_SECRET=oauth-client-secret:latest"
+  --set-secrets "NOTION_TOKEN=notion-token:latest,GOOGLE_CLIENT_SECRET=oauth-client-secret:latest,/app/token.json=calendar-token:latest"
 ```
 
 Adjust **`--set-env-vars`** / **`--set-secrets`** to match your app (see `.env.example`). Add **`CORS_ALLOW_ORIGINS`** only if the browser origin differs from the service URL (same-origin deploys usually do not need it).

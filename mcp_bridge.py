@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP
 
 from calendar_tool import create_calendar_block, get_free_slots
 from database import retrieve_context_tool, save_project_context_tool
@@ -34,17 +34,17 @@ def _build_mcp() -> FastMCP:
         ),
     )
 
-    @mcp.tool
+    @mcp.tool()
     def mcp_search_web_snippets(query: str, max_results: int = 8) -> str:
         """Search the web via ddgs; returns titles, URLs, and snippets."""
         return search_web_snippets(query, max_results)
 
-    @mcp.tool
+    @mcp.tool()
     def mcp_search_arxiv(query: str, max_results: int = 5) -> str:
         """Search arXiv for papers."""
         return search_arxiv(query, max_results)
 
-    @mcp.tool
+    @mcp.tool()
     def mcp_save_project_context(
         project_key: str,
         category: str,
@@ -54,12 +54,12 @@ def _build_mcp() -> FastMCP:
         """Save structured context to Firestore for a project."""
         return save_project_context_tool(project_key, category, value, notes)
 
-    @mcp.tool
+    @mcp.tool()
     def mcp_retrieve_project_context(project_key: str, category: str = "") -> str:
         """Retrieve Firestore memory for a project (empty category = all)."""
         return retrieve_context_tool(project_key, category or None)
 
-    @mcp.tool
+    @mcp.tool()
     def mcp_create_kanban_card(
         title: str,
         status: str,
@@ -70,17 +70,17 @@ def _build_mcp() -> FastMCP:
         """Create a Notion Kanban card or run-page task (uses active Notion context / template DB)."""
         return create_kanban_card(title, status, deadline, description, sources)
 
-    @mcp.tool
+    @mcp.tool()
     def mcp_list_kanban_cards(status_filter: str = "") -> str:
         """List Notion Kanban cards or run-page todos."""
         return list_kanban_cards(status_filter)
 
-    @mcp.tool
+    @mcp.tool()
     def mcp_get_free_slots(date: str, work_start: int = 9, work_end: int = 20) -> str:
         """Find free 2-hour slots on a given ISO date (uses Google Calendar)."""
         return get_free_slots(date, work_start, work_end)
 
-    @mcp.tool
+    @mcp.tool()
     def mcp_create_calendar_block(
         task_title: str,
         date: str,
@@ -97,7 +97,8 @@ def _build_mcp() -> FastMCP:
 
 
 _mcp = _build_mcp()
-_raw_mcp_http_app = _mcp.http_app(path="/")
+
+_raw_mcp_http_app = _mcp.sse_app(mount_path="/")
 
 
 class MCPAuthASGIWrapper:
@@ -140,4 +141,4 @@ _secret = os.getenv("MCP_AUTH_TOKEN", "").strip()
 mcp_http_asgi: Any = (
     MCPAuthASGIWrapper(_raw_mcp_http_app, _secret) if _secret else _raw_mcp_http_app
 )
-mcp_http_lifespan = _raw_mcp_http_app.lifespan
+mcp_http_lifespan = _raw_mcp_http_app.router.lifespan_context

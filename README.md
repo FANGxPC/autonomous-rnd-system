@@ -71,6 +71,58 @@ Optional: `python database.py` to sanity-check Firestore; `python test_member2.p
 
 ---
 
+## Running in Google Cloud Shell (Easiest)
+
+If you want to skip local setups and run everything directly in your browser, Google Cloud Shell is the easiest method.
+
+1. Open [Google Cloud Shell](https://shell.cloud.google.com/).
+2. Clone the repository and navigate into it:
+   ```bash
+   git clone <your-repo-url>
+   cd autonomous-rnd-system
+   ```
+3. Create a virtual environment and install dependencies:
+   ```bash
+   python3 -m venv .adk_env
+   source .adk_env/bin/activate
+   pip install -r requirements.txt
+   ```
+4. Copy `.env.example` to `.env` and fill in your keys (you can upload your `key.json` via the Cloud Shell three-dot menu -> Upload):
+   ```bash
+   cp .env.example .env
+   ```
+5. Start the application:
+   ```bash
+   python main.py
+   ```
+6. Click the **Web Preview** icon (the eye symbol) at the top right of the Cloud Shell terminal and click **Preview on port 8000** to see the web UI and Swagger docs.
+
+### Deploying to Cloud Run (From Cloud Shell)
+
+To push the application to a live public URL using Google Cloud Run, you can run the following commands to enable the necessary APIs, prepare the artifact registry, and deploy with your secrets configured as environment variables:
+
+```bash
+# 1) Enable required Google Cloud APIs
+gcloud services enable run.googleapis.com artifactregistry.googleapis.com cloudbuild.googleapis.com secretmanager.googleapis.com
+
+# 2) Create an Artifact Registry repository (Cloud Run source deploys use this by default)
+gcloud artifacts repositories create cloud-run-source-deploy --repository-format=docker --location=us-central1
+
+# 3) Create a Google Cloud Secret containing your token.json file
+gcloud secrets create calendar-token --data-file=token.json
+
+# 4) Deploy the app with your environment variables and mount the secret
+gcloud run deploy autonomous-rnd-system \
+  --source . \
+  --region=us-central1 \
+  --allow-unauthenticated \
+  --port=8080 \
+  --set-env-vars="ADK_MODEL=gemini-2.5-flash,GOOGLE_GENAI_USE_VERTEXAI=1,GOOGLE_CLOUD_PROJECT=YOUR_PROJECT_ID,GOOGLE_CLOUD_LOCATION=us-central1,NOTION_TOKEN=YOUR_NOTION_TOKEN,NOTION_DATABASE_ID=YOUR_NOTION_DATABASE_ID,GOOGLE_CALENDAR_ID=YOUR_EMAIL@gmail.com,GOOGLE_CLIENT_ID=YOUR_GOOGLE_CLIENT_ID,GOOGLE_CLIENT_SECRET=YOUR_GOOGLE_CLIENT_SECRET,NOTION_RUNS_PARENT_PAGE_ID=YOUR_NOTION_PAGE_ID,NOTION_RUN_USE_KANBAN_DB=1" \
+  --set-secrets="/app/token.json=calendar-token:latest"
+```
+
+---
+
 ## Notion modes
 
 | Mode | Env | Behavior |
@@ -191,6 +243,7 @@ ADK_LITE=1
 ```
 
 ### 5. Run the API
+### 6. Run the API
 
 With the venv **activated** (see **How to run** above):
 
@@ -203,6 +256,7 @@ python main.py
 - **MCP:** [http://127.0.0.1:8000/mcp/](http://127.0.0.1:8000/mcp/) — same process as the API; see below.
 
 ### 5b. MCP (FastMCP) — URL and testing
+### 7. MCP (FastMCP) — URL and testing
 
 **Exact path (same origin as the UI/API):**
 
@@ -238,6 +292,7 @@ fastmcp list http://127.0.0.1:8000/mcp/ -t http --auth your-judge-secret
 The CLI sends the token as a **Bearer** token; the server also accepts **`X-MCP-API-Key`** for non–FastMCP clients. If `fastmcp list` is not available, use any MCP-over-HTTP client pointed at that URL with the same headers. **`GET /health`** and **`POST /trigger-pipeline`** are unchanged — MCP and the agent pipeline are independent surfaces on one app.
 
 ### 6. Test Firestore without the full app (optional)
+### 8. Test Firestore without the full app (optional)
 
 ```bash
 python database.py

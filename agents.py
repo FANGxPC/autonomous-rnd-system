@@ -15,7 +15,7 @@ from workspace_tool import prepare_project_workspace
 
 load_dotenv()
 
-ADK_MODEL = "gemini-1.5-flash"
+ADK_MODEL = os.getenv("ADK_MODEL", "gemini-2.5-flash")
 ADK_LITE = True
 
 

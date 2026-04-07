@@ -538,13 +538,19 @@ async def _mcp_redirect_slash(request: Request) -> RedirectResponse:
 
 # MCP over HTTP (Streamable HTTP) — mount before catch-all static files
 app.mount("/mcp", mcp_http_asgi)
-if _FRONTEND_DIR.is_dir():
-    app.mount(
-        "/",
-        StaticFiles(directory=str(_FRONTEND_DIR), html=True),
-        name="frontend",
-    )
 
+@app.get("/mcp")
+async def redirect_to_mcp():
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/mcp/", status_code=307)
+
+
+if _FRONTEND_DIR.is_dir():
+    app.mount("/", StaticFiles(directory=_FRONTEND_DIR, html=True), name="frontend")
+else:
+    @app.get("/")
+    async def index_redirect():
+        return RedirectResponse(url="/api", status_code=307)
 
 if __name__ == "__main__":
     _port = int(os.environ.get("PORT", "8000"))
