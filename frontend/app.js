@@ -44,7 +44,7 @@
         ? `<p class="link-card-sub">${escapeHtml(subtitle)}</p>`
         : "") +
       `<div class="link-card-actions">` +
-      `<a class="link-card-btn" href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">Open</a>` +
+      `<button type="button" class="link-card-btn open-layer-btn" data-href="${escapeHtml(href)}">Open</button>` +
       `<a class="link-card-btn link-card-btn--ghost" href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">New tab</a>` +
       `</div></article>`
     );
@@ -227,6 +227,23 @@
       );
     } finally {
       submitBtn.disabled = false;
+    }
+  });
+
+  // Layer Overlay Logic (Fallback to Popup for sites with X-Frame-Options restrictions)
+  document.body.addEventListener("click", (e) => {
+    const btn = e.target.closest(".open-layer-btn");
+    if (btn) {
+      e.preventDefault();
+      const href = btn.getAttribute("data-href");
+      if (href) {
+        // Those sites block iframes, so use a clean popup window instead
+        const w = Math.min(1000, window.screen.width - 40);
+        const h = Math.min(800, window.screen.height - 40);
+        const left = Math.max(0, (window.screen.width - w) / 2);
+        const top = Math.max(0, (window.screen.height - h) / 2);
+        window.open(href, 'PopupOverlay', `width=${w},height=${h},top=${top},left=${left},toolbar=no,menubar=no,scrollbars=yes,resizable=yes,status=no`);
+      }
     }
   });
 })();
