@@ -26,12 +26,24 @@
 | **MCP** | Streamable HTTP at **`/mcp/`** (trailing slash); optional `MCP_AUTH_TOKEN` |
 
 ```mermaid
-flowchart LR
-  API["POST /trigger-pipeline"] --> TL[Tech Lead]
-  TL --> FS[(Firestore)]
+flowchart TB
+  API["POST /trigger-pipeline"] --> TL[Tech Lead ADK]
+
+  TL <-->|"Memory tools: read + write on every run"| FS[(Firestore)]
+  FS -.- MEM["project_memory · action_logs · run_history"]
+
   TL --> R[Research]
+  R --> WEB["ddgs + arXiv (live HTTP)"]
+
   TL --> S[Scrum]
+  S --> N[Notion API]
+  S --> GC[Google Calendar API]
+
+  TL --> WP[Workspace prep]
+  WP --> DISK["generated_workspaces/"]
 ```
+
+*During an active pipeline the Tech Lead uses Firestore **both ways** (save + retrieve memory); sub-agents hit live APIs and disk as shown.*
 
 ---
 
