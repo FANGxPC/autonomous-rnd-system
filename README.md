@@ -6,7 +6,7 @@
 
 | Requirement | This project |
 |-------------|----------------|
-| **Primary agent + sub-agents** | **Tech Lead** delegates to **Research**, **Scrum Master**, and **Workspace Prep** (ADK). |
+| **Primary agent + sub-agents** | **Tech Lead** delegates to **Research**, and **Scrum Master**. |
 | **Structured database** | **Firestore** — project memory, action logs, run history (read/write via agent tools). |
 | **MCP + real tools** | **`/mcp/`** exposes the same capabilities; **Google Calendar** (blocks/slots), **Notion** (Kanban / run pages), **web + arXiv** research. |
 | **Multi-step workflows** | One **`POST /trigger-pipeline`** run chains memory → research (when needed) → Scrum (tasks + calendar) → optional workspace folders. |
@@ -21,7 +21,7 @@
 | Piece | Detail |
 |--------|--------|
 | **Trigger** | `POST /trigger-pipeline` with `prompt`, `deadline`, `project_key` |
-| **Agents** | **Tech Lead** coordinates **Research** (web + arXiv), **Scrum Master** (Notion + Calendar), **Workspace Prep** (folders under `generated_workspaces/`) |
+| **Agents** | **Tech Lead** coordinates **Research** (web + arXiv), **Scrum Master** (Notion + Calendar) |
 | **Memory** | Firestore: `project_memory`, `action_logs`, `run_history` |
 | **MCP** | Streamable HTTP at **`/mcp/`** (trailing slash); optional `MCP_AUTH_TOKEN` |
 
