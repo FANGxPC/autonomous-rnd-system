@@ -1,5 +1,5 @@
 """
-ADK agents: Tech Lead (Firestore) + Research (mock arxiv) + Scrum Master (Notion + Google Calendar) + Workspace Prep.
+ADK agents: Tech Lead (Firestore) + Research (web + optional arXiv) + Scrum (Notion + Calendar) + Workspace Prep.
 """
 
 import os
@@ -10,56 +10,13 @@ from google.adk.agents import Agent
 from calendar_tool import create_calendar_block, get_free_slots
 from database import memory_tools_phase3
 from notion_tool import create_kanban_card, list_kanban_cards
+from research_tool import search_arxiv, search_web_snippets
+from workspace_tool import prepare_project_workspace
 
 load_dotenv()
 
 ADK_MODEL = os.getenv("ADK_MODEL", "gemini-2.5-flash")
-ADK_LITE = os.getenv("ADK_LITE", "0").strip().lower() in ("1", "true", "yes", "on")
-
-
-# ----------------------------
-# Mock Research Tool
-# ----------------------------
-
-def mock_search_arxiv(query: str) -> str:
-    return f"[MOCK] Found research papers related to '{query}'"
-
-
-# ----------------------------
-# Mock Workspace Tool
-# ----------------------------
-
-import os
-
-def prepare_workspace(project_name: str) -> str:
-    """
-    Creates a real project workspace with basic structure.
-    """
-
-    base_dir = "project_workspace"
-    project_dir = os.path.join(base_dir, project_name)
-
-    try:
-        # Create folders
-        os.makedirs(os.path.join(project_dir, "src"), exist_ok=True)
-        os.makedirs(os.path.join(project_dir, "tests"), exist_ok=True)
-        os.makedirs(os.path.join(project_dir, "docs"), exist_ok=True)
-
-        # Create README
-        readme_path = os.path.join(project_dir, "README.md")
-        with open(readme_path, "w") as f:
-            f.write(f"# {project_name}\n\n")
-            f.write("Project workspace generated automatically.\n")
-
-        # Create requirements file
-        req_path = os.path.join(project_dir, "requirements.txt")
-        with open(req_path, "w") as f:
-            f.write("# Add project dependencies here\n")
-
-        return f"Workspace created at: {project_dir}"
-
-    except Exception as e:
-        return f"Workspace creation failed: {str(e)}"
+ADK_LITE = True
 
 
 # ----------------------------
@@ -69,19 +26,18 @@ def prepare_workspace(project_name: str) -> str:
 research_agent = Agent(
     name="research_agent",
     model=ADK_MODEL,
-    description="Finds research papers and datasets.",
+    description="Finds sources via web search (DuckDuckGo); optional arXiv for papers.",
     instruction="""
-You are the Research Agent.
+You are the Research Agent (sub-agent only).
 
 When given a technical topic:
-- Search for relevant research papers
-- Identify datasets
-- Provide useful references
+1. Call search_web_snippets first with a short keyword query.
+2. If academic preprints are needed, call search_arxiv.
+3. Cite URLs from tool output.
 
-Always use the mock_search_arxiv tool.
-Be concise and technical.
+Keep output concise bullet points only.
 """,
-    tools=[mock_search_arxiv],
+    tools=[search_web_snippets, search_arxiv],
 )
 
 
@@ -98,17 +54,12 @@ You are the Scrum Master Agent.
 
 When given a project and deadline, you MUST:
 
-1. Call get_free_slots to find available time slots on the target date.
-2. Call create_calendar_block for the first 2-3 tasks to block Deep Work time.
-3. Call create_kanban_card for EACH task with:
-   - title
-   - status='To Do'
-   - deadline
-   - description
-4. Return a summary listing every card created and every calendar block scheduled.
+1. Call get_free_slots
+2. Call create_calendar_block
+3. Call create_kanban_card for EACH task
 
 Always create calendar blocks BEFORE Notion cards.
-Use status 'To Do' for all new tasks.
+Use status 'To Do'.
 """,
     tools=[
         get_free_slots,
@@ -120,32 +71,30 @@ Use status 'To Do' for all new tasks.
 
 
 # ----------------------------
-# Workspace Prep Agent (Sub-Agent 3)
+# Workspace Prep Agent (REAL)
 # ----------------------------
 
 workspace_prep_agent = Agent(
     name="workspace_prep_agent",
     model=ADK_MODEL,
-    description="Prepares project workspace, README, and starter structure.",
+    description="Creates a real starter folder layout and README on disk.",
     instruction="""
 You are the Workspace Preparation Agent.
 
-After planning is complete, your job is to:
+After planning is clear:
 
-1. Create a basic project folder structure
-2. Draft a README file
-3. Suggest initial files needed
-4. Prepare starter documentation
+1. Call prepare_project_workspace
+2. Use a filesystem-safe project name
+3. Return the path created
 
-Focus on practical developer setup.
-Keep output structured and ready-to-use.
+Do not invent paths.
 """,
-    tools=[prepare_workspace],
+    tools=[prepare_project_workspace],
 )
 
 
 # ----------------------------
-# Tech Lead Agent (Main Manager)
+# Tech Lead Agent (Main)
 # ----------------------------
 
 tech_lead_agent = Agent(
@@ -155,16 +104,18 @@ tech_lead_agent = Agent(
     instruction="""
 You are the Tech Lead Agent.
 
-Your responsibilities:
+Responsibilities:
 
-1. Check project memory using database tools
-2. Break project into phases
-3. Delegate research to Research Agent
-4. Delegate planning and scheduling to Scrum Master Agent
-5. Delegate workspace setup to Workspace Prep Agent
+1. Check memory
+2. Plan tasks
+3. Delegate research if needed
+4. ALWAYS delegate to scrum_master_agent when deadline exists
+5. Delegate to workspace_prep_agent when project setup is needed
 6. Save decisions into memory
 
-Always coordinate all sub-agents properly.
+Workflow order:
+
+memory → research → scrum → workspace → summary
 """,
     tools=memory_tools_phase3,
     sub_agents=[

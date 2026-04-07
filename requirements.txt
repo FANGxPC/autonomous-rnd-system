@@ -1,5 +1,7 @@
 google-adk
+google-genai
 fastapi
+fastmcp>=2.0
 uvicorn[standard]
 pydantic
 python-dotenv
@@ -9,3 +11,5 @@ notion-client
 google-api-python-client
 google-auth-httplib2
 google-auth-oauthlib
+ddgs>=9.0
+google-cloud-firestore

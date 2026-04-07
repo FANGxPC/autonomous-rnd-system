@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -26,7 +27,320 @@ from notion_client import Client
 
 load_dotenv()
 
-_notion = Client(auth=os.environ["NOTION_TOKEN"])
+_notion = Client(auth=os.environ.get("NOTION_TOKEN", ""))
+
+# Notion rich_text content max ~2000; stay under for safety.
+_NOTION_RICHTEXT_MAX = 1990
+
+
+def _chunk_plain_text(text: str) -> list[str]:
+    text = (text or "").strip()
+    if not text:
+        return []
+    chunks: list[str] = []
+    while text:
+        chunks.append(text[:_NOTION_RICHTEXT_MAX])
+        text = text[_NOTION_RICHTEXT_MAX:].lstrip()
+    return chunks
+
+
+def _default_annotations(*, bold: bool = False) -> dict[str, Any]:
+    """Notion expects a full annotations object on rich_text runs (esp. bold)."""
+    return {
+        "bold": bold,
+        "italic": False,
+        "strikethrough": False,
+        "underline": False,
+        "code": False,
+        "color": "default",
+    }
+
+
+def _paragraph_block_objects(body: str) -> list[dict[str, Any]]:
+    """Plain paragraphs (no ** parsing); prefer _paragraph_blocks_from_markdown for user text."""
+    ann = _default_annotations()
+    return [
+        {
+            "object": "block",
+            "type": "paragraph",
+            "paragraph": {
+                "rich_text": [
+                    {
+                        "type": "text",
+                        "text": {"content": ck},
+                        "annotations": ann,
+                    }
+                ],
+            },
+        }
+        for ck in _chunk_plain_text(body)
+    ]
+
+
+# List markers: ASCII - * +, Unicode bullets, MD + lists.
+# Lines starting **... fail (no \s+ after first *) so they are not treated as bullets.
+_BULLET_LINE = re.compile(r"^\s*[\-\*\+•·▪▸]\s+(.+)$")
+_NUMBERED_LINE = re.compile(r"^\s*\d+\.\s+(.+)$")
+_NUMBERED_PAREN_LINE = re.compile(r"^\s*\d+\)\s+(.+)$")
+_HEADING_LINE = re.compile(r"^\s*(#{1,3})\s+(.+?)\s*$")
+_URL_IN_LINE = re.compile(r"https?://[^\s\)\]\>\"\'\,]+")
+
+
+def _rich_text_from_string(text: str) -> list[dict[str, Any]]:
+    """Inline **bold** → Notion rich_text segments (no visible asterisks)."""
+    text = (text or "").strip()
+    if not text:
+        return [
+            {
+                "type": "text",
+                "text": {"content": " "},
+                "annotations": _default_annotations(),
+            }
+        ]
+    parts = re.split(r"(\*\*.+?\*\*)", text)
+    rich: list[dict[str, Any]] = []
+    for p in parts:
+        if not p:
+            continue
+        if len(p) >= 4 and p.startswith("**") and p.endswith("**"):
+            frag = p[2:-2]
+            for ck in _chunk_plain_text(frag):
+                rich.append(
+                    {
+                        "type": "text",
+                        "text": {"content": ck},
+                        "annotations": _default_annotations(bold=True),
+                    }
+                )
+        else:
+            for ck in _chunk_plain_text(p):
+                rich.append(
+                    {
+                        "type": "text",
+                        "text": {"content": ck},
+                        "annotations": _default_annotations(),
+                    }
+                )
+    return rich or [
+        {
+            "type": "text",
+            "text": {"content": " "},
+            "annotations": _default_annotations(),
+        }
+    ]
+
+
+def _paragraph_blocks_from_markdown(body: str) -> list[dict[str, Any]]:
+    """One or more paragraph blocks; always parses **bold** (any length)."""
+    body = (body or "").strip()
+    if not body:
+        return []
+    out: list[dict[str, Any]] = []
+    for chunk in re.split(r"\n{2,}", body):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        out.append(
+            {
+                "object": "block",
+                "type": "paragraph",
+                "paragraph": {"rich_text": _rich_text_from_string(chunk)},
+            }
+        )
+    return out
+
+
+def _normalize_description_markdown(text: str) -> str:
+    text = (text or "").replace("\r\n", "\n").replace("\r", "\n")
+    text = text.replace("\u00a0", " ").replace("\ufeff", "")
+    text = text.replace("＊", "*")
+    t = text.strip()
+    if t.startswith("```"):
+        t = re.sub(r"^```[a-zA-Z0-9_+#.-]*\s*\n?", "", t)
+        t = re.sub(r"\n```\s*$", "", t)
+    lines_out: list[str] = []
+    for line in t.split("\n"):
+        line = re.sub(r"^(\s*)[•·▪▸]\s*", r"\1* ", line)
+        lines_out.append(line)
+    return "\n".join(lines_out).strip()
+
+
+def _description_to_block_dicts(description: str) -> list[dict[str, Any]]:
+    """
+    Turn agent markdown-ish text into Notion blocks: real bullets/numbers/headings;
+    **bold** becomes rich_text (asterisks are not shown).
+    """
+    text = _normalize_description_markdown(description)
+    if not text:
+        return []
+    lines = text.split("\n")
+    blocks: list[dict[str, Any]] = []
+    para_buf: list[str] = []
+
+    def flush_para() -> None:
+        nonlocal para_buf
+        if not para_buf:
+            return
+        body = "\n".join(para_buf).strip()
+        para_buf = []
+        if not body:
+            return
+        blocks.extend(_paragraph_blocks_from_markdown(body))
+
+    for line in lines:
+        hm = _HEADING_LINE.match(line)
+        nm = _NUMBERED_LINE.match(line)
+        npm = _NUMBERED_PAREN_LINE.match(line)
+        m = _BULLET_LINE.match(line)
+        if hm:
+            flush_para()
+            level = len(hm.group(1))
+            title = hm.group(2).strip()
+            htype = "heading_1" if level == 1 else "heading_2" if level == 2 else "heading_3"
+            blocks.append(
+                {
+                    "object": "block",
+                    "type": htype,
+                    htype: {
+                        "rich_text": _rich_text_from_string(
+                            title[:_NOTION_RICHTEXT_MAX]
+                        ),
+                    },
+                }
+            )
+        elif npm:
+            flush_para()
+            content = npm.group(1).strip()
+            if content:
+                blocks.append(
+                    {
+                        "object": "block",
+                        "type": "numbered_list_item",
+                        "numbered_list_item": {
+                            "rich_text": _rich_text_from_string(
+                                content[:_NOTION_RICHTEXT_MAX]
+                            ),
+                        },
+                    }
+                )
+        elif nm:
+            flush_para()
+            content = nm.group(1).strip()
+            if content:
+                blocks.append(
+                    {
+                        "object": "block",
+                        "type": "numbered_list_item",
+                        "numbered_list_item": {
+                            "rich_text": _rich_text_from_string(
+                                content[:_NOTION_RICHTEXT_MAX]
+                            ),
+                        },
+                    }
+                )
+        elif m:
+            flush_para()
+            content = m.group(1).strip()
+            if content:
+                blocks.append(
+                    {
+                        "object": "block",
+                        "type": "bulleted_list_item",
+                        "bulleted_list_item": {
+                            "rich_text": _rich_text_from_string(
+                                content[:_NOTION_RICHTEXT_MAX]
+                            ),
+                        },
+                    }
+                )
+        else:
+            if not line.strip():
+                flush_para()
+            else:
+                para_buf.append(line)
+    flush_para()
+    return blocks
+
+
+def _sources_to_blocks(sources: str) -> list[dict[str, Any]]:
+    """Heading + bulleted lines; URLs become clickable links."""
+    src = (sources or "").strip()
+    if not src:
+        return []
+    ann = _default_annotations()
+    out: list[dict[str, Any]] = [
+        {
+            "object": "block",
+            "type": "heading_3",
+            "heading_3": {
+                "rich_text": [
+                    {
+                        "type": "text",
+                        "text": {"content": "Sources & references"},
+                        "annotations": ann,
+                    }
+                ],
+            },
+        },
+    ]
+    for raw_line in src.split("\n"):
+        line = raw_line.strip()
+        if not line:
+            continue
+        url_m = _URL_IN_LINE.search(line)
+        if url_m:
+            url = url_m.group(0).rstrip(".,);]")
+            label = line.replace(url, "").strip(" -\u2022\t•")
+            label = (label[:400] + "…") if len(label) > 420 else label
+            if not label:
+                label = url[:80] + ("…" if len(url) > 80 else "")
+            rich = []
+            if label:
+                for ck in _chunk_plain_text(f"{label} "):
+                    rich.append(
+                        {
+                            "type": "text",
+                            "text": {"content": ck},
+                            "annotations": ann,
+                        }
+                    )
+            for ck in _chunk_plain_text(url):
+                rich.append(
+                    {
+                        "type": "text",
+                        "text": {"content": ck, "link": {"url": url}},
+                        "annotations": ann,
+                    }
+                )
+            out.append(
+                {
+                    "object": "block",
+                    "type": "bulleted_list_item",
+                    "bulleted_list_item": {"rich_text": rich},
+                }
+            )
+        else:
+            out.append(
+                {
+                    "object": "block",
+                    "type": "bulleted_list_item",
+                    "bulleted_list_item": {
+                        "rich_text": _rich_text_from_string(
+                            line[:_NOTION_RICHTEXT_MAX]
+                        ),
+                    },
+                }
+            )
+    return out
+
+
+def _append_blocks_batched(parent_block_id: str, blocks: list[dict[str, Any]]) -> None:
+    for i in range(0, len(blocks), 100):
+        _notion.blocks.children.append(
+            block_id=parent_block_id,
+            children=blocks[i : i + 100],
+        )
+
 
 # New DB per pipeline run uses this fixed schema (matches Scrum agent: To Do / In Progress / Done).
 FIXED_RUN_SCHEMA: dict[str, Any] = {
@@ -150,23 +464,35 @@ def _append_task_blocks_to_page(
     status: str,
     deadline: str,
     description: str,
+    sources: str = "",
 ) -> None:
-    text = f"{title}  [{status}]  due {deadline}"
-    if description:
-        text = f"{text}\n{description}"
-    text = text[:1900]
-
+    header = f"{title}  [{status}]  due {deadline}"[:_NOTION_RICHTEXT_MAX]
     children: list[dict[str, Any]] = [
         {
             "object": "block",
             "type": "to_do",
             "to_do": {
-                "rich_text": [{"type": "text", "text": {"content": text}}],
+                "rich_text": [{"type": "text", "text": {"content": header}}],
                 "checked": False,
             },
         }
     ]
-    _notion.blocks.children.append(block_id=page_id, children=children)
+    if description.strip():
+        children.append(
+            {
+                "object": "block",
+                "type": "heading_3",
+                "heading_3": {
+                    "rich_text": [
+                        {"type": "text", "text": {"content": "Task details"}}
+                    ],
+                },
+            }
+        )
+        children.extend(_description_to_block_dicts(description))
+    if sources.strip():
+        children.extend(_sources_to_blocks(sources))
+    _append_blocks_batched(page_id, children)
 
 
 def _plain_from_rich(rich: list[dict[str, Any]]) -> str:
@@ -458,7 +784,13 @@ def end_notion_run_workspace(reset_token: Token | None) -> None:
         _run_ctx.reset(reset_token)
 
 
-def create_kanban_card(title: str, status: str, deadline: str, description: str = "") -> str:
+def create_kanban_card(
+    title: str,
+    status: str,
+    deadline: str,
+    description: str = "",
+    sources: str = "",
+) -> str:
     """
     Creates a task: either a Kanban row (template or per-run DB) or a to-do block on the run page.
     Use this to create project tasks with deadlines.
@@ -467,7 +799,9 @@ def create_kanban_card(title: str, status: str, deadline: str, description: str 
         title:       The task title, e.g. 'ALU Design'
         status:      One of: 'To Do', 'In Progress', 'Done' (must match a Notion option)
         deadline:    ISO date string like '2026-05-15'
-        description: Optional extra detail about the task
+        description: Task detail: scope, bullets (* or - lines), **bold** labels, multiple paragraphs OK.
+        sources:     Optional. Newline-separated URLs and citations; rendered under **Sources & references**
+                     at the bottom of the card (clickable links when lines contain http/https URLs).
 
     Returns:
         A confirmation string with the Notion page URL
@@ -476,7 +810,7 @@ def create_kanban_card(title: str, status: str, deadline: str, description: str 
         ctx = _effective_ctx()
         if ctx is not None and ctx.kanban_database_id is None:
             _append_task_blocks_to_page(
-                ctx.run_page_id, title, status, deadline, description
+                ctx.run_page_id, title, status, deadline, description, sources
             )
             return (
                 f"✅ Task added to run page: '{title}' [{status}] due {deadline} "
@@ -505,25 +839,33 @@ def create_kanban_card(title: str, status: str, deadline: str, description: str 
         if deadline and dname:
             properties[dname] = {"date": {"start": deadline}}
 
-        children = []
-        if description:
+        children: list[dict[str, Any]] = []
+        if description.strip():
             children.append(
                 {
-                    "object": "block",
-                    "type": "paragraph",
-                    "paragraph": {
+                "object": "block",
+                    "type": "heading_3",
+                    "heading_3": {
                         "rich_text": [
-                            {"type": "text", "text": {"content": description}}
-                        ]
+                            {"type": "text", "text": {"content": "Task details"}}
+                        ],
                     },
                 }
             )
+            children.extend(_description_to_block_dicts(description))
+        children.extend(_sources_to_blocks(sources))
 
-        page = _notion.pages.create(
-            parent={"database_id": _current_database_id()},
-            properties=properties,
-            children=children,
-        )
+        first_children = children[:100]
+        create_kw: dict[str, Any] = {
+            "parent": {"database_id": _current_database_id()},
+            "properties": properties,
+        }
+        if first_children:
+            create_kw["children"] = first_children
+        page = _notion.pages.create(**create_kw)
+        rest = children[100:]
+        if rest:
+            _append_blocks_batched(page["id"], rest)
 
         url = page.get("url", "no-url")
         return f"✅ Notion card created: '{title}' [{status}] due {deadline} → {url}"

@@ -1,0 +1,35 @@
+# Secrets and local-only files (use Cloud Run env + Secret Manager)
+.env
+.env.*
+!.env.example
+token.json
+*.pem
+
+# Python / tooling
+.adk_env
+venv
+.venv
+__pycache__
+*.py[cod]
+*$py.class
+.Python
+*.egg-info
+.eggs
+dist
+build
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# Git / IDE
+.git
+.gitignore
+.cursor
+
+# Local data / outputs
+project_memory.db
+generated_workspaces
+
+# Docs not needed at runtime (optional — remove this line if you want README in image)
+*.md
+!README.md
