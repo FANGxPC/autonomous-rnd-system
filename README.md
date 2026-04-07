@@ -2,6 +2,18 @@
 
 **Google Gen AI APAC Hackathon** — One prompt in, structured planning out: **Firestore** memory, **Google ADK** multi-agent orchestration, **Notion** + **Google Calendar**, web research, optional on-disk workspace prep. A single **FastAPI** app serves the **web UI**, **REST API**, **Swagger**, and **MCP** (`/mcp/`) on the same origin.
 
+**Hackathon brief (how we satisfy it)** — *Multi-agent task, schedule, and information management across tools and data:*
+
+| Requirement | This project |
+|-------------|----------------|
+| **Primary agent + sub-agents** | **Tech Lead** delegates to **Research**, **Scrum Master**, and **Workspace Prep** (ADK). |
+| **Structured database** | **Firestore** — project memory, action logs, run history (read/write via agent tools). |
+| **MCP + real tools** | **`/mcp/`** exposes the same capabilities; **Google Calendar** (blocks/slots), **Notion** (Kanban / run pages), **web + arXiv** research. |
+| **Multi-step workflows** | One **`POST /trigger-pipeline`** run chains memory → research (when needed) → Scrum (tasks + calendar) → optional workspace folders. |
+| **API-first deployment** | **FastAPI** + **Swagger**; ships to **Cloud Run** as a single HTTP service. |
+
+**Goal:** Show agents, tools, and persisted context working together on a realistic planning workflow (not a single-shot chat reply).
+
 ---
 
 ## What it does
