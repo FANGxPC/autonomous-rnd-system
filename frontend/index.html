@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Deep-Tech Sprint — Run pipeline</title>
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=3" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -108,11 +108,19 @@
         </div>
       </main>
     </div>
+
     <script>
       if (typeof window.API_BASE === "undefined") {
         window.API_BASE = "";
       }
     </script>
-    <script src="app.js"></script>
+    <script src="app.js?v=3"></script>
+    <script>
+      // Force reload CSS dynamically just in case cache-busting fails in Cloud Shell
+      const link = document.querySelector('link[href^="styles.css"]');
+      if (link) {
+          link.href = 'styles.css?v=' + new Date().getTime();
+      }
+    </script>
   </body>
 </html>
