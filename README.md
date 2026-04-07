@@ -38,9 +38,6 @@ flowchart TB
   TL --> S[Scrum]
   S --> N[Notion API]
   S --> GC[Google Calendar API]
-
-  TL --> WP[Workspace prep]
-  WP --> DISK["generated_workspaces/"]
 ```
 
 *During an active pipeline the Tech Lead uses Firestore **both ways** (save + retrieve memory); sub-agents hit live APIs and disk as shown.*
