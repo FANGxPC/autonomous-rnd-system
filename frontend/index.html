@@ -35,16 +35,22 @@
               ></textarea>
             </div>
 
-            <div class="field">
+            <div class="field field--date">
               <label class="label" for="deadline">Deadline</label>
-              <input
-                id="deadline"
-                name="deadline"
-                type="date"
-                class="input"
-                aria-label="Project deadline date"
-              />
-              <p class="hint">Choose the target date for this sprint or milestone.</p>
+              <div class="date-input-wrap">
+                <input
+                  id="deadline"
+                  name="deadline"
+                  type="date"
+                  class="input input--date"
+                  aria-label="Project deadline (today or later)"
+                  aria-describedby="hint-deadline"
+                  autocomplete="off"
+                />
+              </div>
+              <p id="hint-deadline" class="hint">
+                Today or any future day. Tasks and calendar blocks spread from today through this deadline.
+              </p>
             </div>
 
             <div class="field">
@@ -68,6 +74,10 @@
             </div>
 
             <p id="form-status" class="form-status" role="status" aria-live="polite"></p>
+            <p id="pipeline-wait-note" class="pipeline-wait-note hidden" aria-live="polite">
+              Larger or complex projects often take about <strong>5–10 minutes</strong> while agents
+              use Notion, Calendar, and the model — keep this tab open.
+            </p>
 
             <button type="submit" class="submit" id="submit-btn">
               Run pipeline

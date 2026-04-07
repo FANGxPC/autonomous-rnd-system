@@ -5,6 +5,7 @@
   const pageRoot = document.getElementById("page-root");
   const mainCard = document.getElementById("main-card");
   const statusEl = document.getElementById("form-status");
+  const waitNoteEl = document.getElementById("pipeline-wait-note");
   const submitBtn = document.getElementById("submit-btn");
   const newRunBtn = document.getElementById("new-run-btn");
   const resultsBanner = document.getElementById("results-banner");
@@ -35,6 +36,38 @@
     return d.innerHTML;
   }
 
+  /** Local calendar date YYYY-MM-DD (not UTC — avoids off-by-one). */
+  function todayISO() {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }
+
+  function defaultDeadlineSuggestedISO() {
+    const d = new Date();
+    d.setDate(d.getDate() + 14);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }
+
+  function initDeadlineField() {
+    const el = document.getElementById("deadline");
+    if (!el) return;
+    const min = todayISO();
+    el.setAttribute("min", min);
+    if (!el.value || el.value < min) {
+      const suggested = defaultDeadlineSuggestedISO();
+      el.value = suggested < min ? min : suggested;
+    }
+    el.addEventListener("change", function () {
+      if (el.value && el.value < min) el.value = min;
+    });
+  }
+
   function linkCard(href, title, subtitle, variant) {
     const v = variant ? ` link-card--${variant}` : "";
     return (
@@ -55,6 +88,7 @@
     if (resultsPanel) resultsPanel.classList.add("hidden");
     if (pageRoot) pageRoot.classList.remove("page--results");
     if (mainCard) mainCard.classList.remove("card--results");
+    if (waitNoteEl) waitNoteEl.classList.add("hidden");
     setFormStatus("", null);
   }
 
@@ -162,6 +196,8 @@
     newRunBtn.addEventListener("click", showFormView);
   }
 
+  initDeadlineField();
+
   if (!form || !statusEl || !submitBtn) return;
 
   form.addEventListener("submit", async function (e) {
@@ -169,7 +205,9 @@
     setFormStatus("", null);
 
     const prompt = document.getElementById("description")?.value?.trim() ?? "";
-    const deadline = document.getElementById("deadline")?.value ?? "";
+    const deadlineEl = document.getElementById("deadline");
+    const deadline = deadlineEl?.value ?? "";
+    const deadlineMin = deadlineEl?.getAttribute("min") || todayISO();
     const project_key =
       document.getElementById("project-key")?.value?.trim() ?? "";
 
@@ -178,7 +216,11 @@
       return;
     }
     if (!deadline) {
-      setFormStatus("Please choose a deadline date.", "is-error");
+      setFormStatus("Please choose a deadline.", "is-error");
+      return;
+    }
+    if (deadline < deadlineMin) {
+      setFormStatus("Deadline cannot be before today.", "is-error");
       return;
     }
     if (!project_key) {
@@ -189,7 +231,8 @@
     const base = API_BASE.replace(/\/$/, "");
     const url = base ? `${base}/trigger-pipeline` : "/trigger-pipeline";
     submitBtn.disabled = true;
-    setFormStatus("Running pipeline — this can take several minutes…", "is-wait");
+    if (waitNoteEl) waitNoteEl.classList.remove("hidden");
+    setFormStatus("Running pipeline…", "is-wait");
 
     try {
       const res = await fetch(url, {
@@ -227,6 +270,7 @@
       );
     } finally {
       submitBtn.disabled = false;
+      if (waitNoteEl) waitNoteEl.classList.add("hidden");
     }
   });
 

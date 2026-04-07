@@ -89,6 +89,8 @@ def _user_message(req: TriggerRequest) -> str:
             + "LITE / quota mode: avoid redundant tool calls (one memory pass when enough; don't repeat "
             "the same search). You still MUST transfer to scrum_master_agent for Notion Kanban cards "
             "and Google Calendar whenever the request is project work and a deadline is present. "
+            "Scrum must spread task and calendar dates from today through that deadline (use "
+            "spread_task_dates and per-task create_calendar_block), not pile every task on the last day only. "
             "Transfer to research_agent only when citations or URLs are needed. "
             "After research_agent returns, your next step must be scrum_master_agent — not a solo summary."
         )
@@ -96,6 +98,8 @@ def _user_message(req: TriggerRequest) -> str:
         base
         + "Save requirements and deadline to Firestore, retrieve any prior context, "
         "then coordinate research and planning via sub-agents. "
+        "Ensure scrum_master_agent spreads task due dates and calendar blocks from today through the "
+        "deadline (spread_task_dates + create_calendar_block), not only on the final day. "
         "If you use research_agent, your next step after research returns must be scrum_master_agent "
         "(Notion + Calendar); do not end the run on research output alone."
     )
@@ -157,8 +161,9 @@ def _pipeline_created_notion_cards(events: list[Any]) -> bool:
     return False
 
 
+# Match htmlLink from API (www.google.com) and browser redirects (calendar.google.com).
 _CALENDAR_EVENT_URL_RE = re.compile(
-    r"https://www\.google\.com/calendar/event\?[^\s\)\]\"']+",
+    r"https://(?:www\.google\.com/calendar/event|calendar\.google\.com/calendar(?:/u/\d+)?/event)\?[^\s\)\]\"']+",
     re.IGNORECASE,
 )
 
@@ -179,6 +184,15 @@ def _strings_from_model_event(event: Any) -> list[str]:
     return out
 
 
+def _clean_calendar_href(url: str) -> str:
+    """Drop trailing junk (e.g. accidental %5C\\n from multiline tool output) from eid URLs."""
+    u = url.rstrip(".,);]")
+    for sep in ("%5C", "%5c", "\\"):
+        if sep in u:
+            u = u.split(sep, 1)[0]
+    return u
+
+
 def _extract_calendar_event_links(
     events: list[Any], outcome_text: str
 ) -> list[str]:
@@ -188,12 +202,12 @@ def _extract_calendar_event_links(
     for ev in events:
         for s in _strings_from_model_event(ev):
             for m in _CALENDAR_EVENT_URL_RE.finditer(s):
-                u = m.group(0).rstrip(".,);]")
+                u = _clean_calendar_href(m.group(0))
                 if u not in seen:
                     seen.add(u)
                     ordered.append(u)
     for m in _CALENDAR_EVENT_URL_RE.finditer(outcome_text or ""):
-        u = m.group(0).rstrip(".,);]")
+        u = _clean_calendar_href(m.group(0))
         if u not in seen:
             seen.add(u)
             ordered.append(u)

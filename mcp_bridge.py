@@ -19,7 +19,7 @@ load_dotenv()
 
 from mcp.server.fastmcp import FastMCP
 
-from calendar_tool import create_calendar_block, get_free_slots
+from calendar_tool import create_calendar_block, get_free_slots, spread_task_dates
 from database import retrieve_context_tool, save_project_context_tool
 from notion_tool import create_kanban_card, list_kanban_cards
 from research_tool import search_arxiv, search_web_snippets
@@ -30,7 +30,8 @@ def _build_mcp() -> FastMCP:
         "Deep-Tech Sprint — R&D tools",
         instructions=(
             "Tools for research (web, arXiv), Firestore memory, Notion Kanban, "
-            "and Google Calendar Deep Work blocks. Matches the ADK agent tool layer."
+            "Google Calendar Deep Work blocks, spread_task_dates. "
+            "Matches the ADK agent tool layer."
         ),
     )
 
@@ -74,6 +75,11 @@ def _build_mcp() -> FastMCP:
     def mcp_list_kanban_cards(status_filter: str = "") -> str:
         """List Notion Kanban cards or run-page todos."""
         return list_kanban_cards(status_filter)
+
+    @mcp.tool()
+    def mcp_spread_task_dates(plan_end_date: str, num_tasks: int) -> str:
+        """Spread ISO dates from today through plan_end_date for num_tasks (Calendar + Notion deadlines)."""
+        return spread_task_dates(plan_end_date, num_tasks)
 
     @mcp.tool()
     def mcp_get_free_slots(date: str, work_start: int = 9, work_end: int = 20) -> str:

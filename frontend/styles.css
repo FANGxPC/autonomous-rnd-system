@@ -134,9 +134,70 @@ body {
   line-height: 1.55;
 }
 
-input[type="date"].input {
+.field--date .input.input--date {
+  border: none;
+  background: transparent;
+  box-shadow: none;
+}
+
+.field--date .date-input-wrap {
+  display: flex;
+  align-items: stretch;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--border);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.field--date .date-input-wrap:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(61, 139, 253, 0.22);
+}
+
+.input--date,
+input[type="date"].input--date {
+  flex: 1;
+  min-height: 2.75rem;
+  padding: 0.55rem 0.75rem 0.55rem 0.9rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
   color-scheme: dark;
   cursor: pointer;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  box-shadow: none;
+}
+
+.input--date:hover,
+input[type="date"].input--date:hover {
+  border-color: transparent;
+}
+
+.input--date:focus,
+input[type="date"].input--date:focus {
+  outline: none;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+/* Chromium / Safari: calendar icon */
+.input--date::-webkit-calendar-picker-indicator,
+input[type="date"].input--date::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 0.55;
+  padding: 0.35rem;
+  margin-right: 0.15rem;
+  border-radius: 6px;
+  filter: invert(0.88) brightness(1.1);
+}
+
+.input--date:hover::-webkit-calendar-picker-indicator,
+.input--date:focus::-webkit-calendar-picker-indicator,
+input[type="date"].input--date:hover::-webkit-calendar-picker-indicator,
+input[type="date"].input--date:focus::-webkit-calendar-picker-indicator {
+  opacity: 1;
+  background: rgba(61, 139, 253, 0.15);
 }
 
 .hint {
@@ -208,6 +269,22 @@ input[type="date"].input {
 
 .form-status.is-wait {
   color: var(--muted);
+}
+
+.pipeline-wait-note {
+  margin: -0.35rem 0 0.5rem;
+  padding: 0.55rem 0.65rem;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--muted);
+  background: rgba(61, 139, 253, 0.08);
+  border: 1px solid rgba(61, 139, 253, 0.2);
+  border-radius: 8px;
+}
+
+.pipeline-wait-note strong {
+  color: #b8c9e0;
+  font-weight: 600;
 }
 
 /* —— Results panel (after pipeline) —— */

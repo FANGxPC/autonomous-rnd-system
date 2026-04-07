@@ -7,7 +7,7 @@ Creates Deep Work blocks on the user's calendar
 
 import json
 import os
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
@@ -20,9 +20,98 @@ SCOPES = ["https://www.googleapis.com/auth/calendar"]
 CALENDAR_ID = os.environ.get("GOOGLE_CALENDAR_ID", "primary")
 IST = ZoneInfo("Asia/Kolkata")
 
+# One Calendar API client per process (avoids rebuild + token read on every insert).
+_calendar_service = None
+
+
+def _spread_dates_inclusive(start: date, end: date, n: int) -> list[date]:
+    """Evenly spaced calendar dates from start through end (inclusive); n >= 1."""
+    if n < 1:
+        return []
+    if start > end:
+        start, end = end, start
+    span = (end - start).days
+    if span <= 0:
+        return [start] * n
+    if n == 1:
+        return [end]
+    out: list[date] = []
+    for i in range(n):
+        off = int(round(i * span / (n - 1)))
+        out.append(start + timedelta(days=min(off, span)))
+    return out
+
+
+def compute_spread_dates_for_plan(
+    plan_end_date: str, num_tasks: int
+) -> tuple[list[date] | None, str | None, bool]:
+    """
+    Shared date spacing: today (IST) through plan_end_date for num_tasks rows.
+    Returns (dates, error_message, adjusted_past_deadline).
+    """
+    if num_tasks < 1 or num_tasks > 20:
+        return None, "num_tasks must be between 1 and 20.", False
+    raw = (plan_end_date or "").strip()[:32]
+    try:
+        end = datetime.strptime(raw, "%Y-%m-%d").date()
+    except ValueError:
+        return (
+            None,
+            f"Invalid plan_end_date — use YYYY-MM-DD only. Got: {plan_end_date!r}",
+            False,
+        )
+
+    today = datetime.now(IST).date()
+    start = today
+    adjusted = False
+    if end < start:
+        end = start + timedelta(days=14)
+        adjusted = True
+
+    dates = _spread_dates_inclusive(start, end, num_tasks)
+    return dates, None, adjusted
+
+
+def spread_task_dates(plan_end_date: str, num_tasks: int) -> str:
+    """
+    Suggests one ISO date per task, spread from today (Asia/Kolkata) through the plan end date.
+    Then **create_calendar_block** per task (staggered hours) and **create_kanban_card** with matching deadlines.
+
+    Args:
+        plan_end_date: Target / milestone date, YYYY-MM-DD (from the user message deadline).
+        num_tasks: Number of tasks you will schedule (1–20).
+
+    Returns:
+        Numbered list of ISO dates in chronological order for tasks 1..N.
+    """
+    dates, err, adjusted = compute_spread_dates_for_plan(plan_end_date, num_tasks)
+    if err:
+        return f"❌ {err}"
+    assert dates is not None
+    lines = [
+        f"📆 **{num_tasks}** task dates ({dates[0]} → {dates[-1]}, Asia/Kolkata)."
+    ]
+    if adjusted:
+        lines.append(
+            "(Plan end was before today — using a 14-day forward window from today for spacing.)"
+        )
+    lines.append("Use **in order** for your tasks (earlier tasks → earlier dates):")
+    for i, d in enumerate(dates, 1):
+        lines.append(f"  {i}. {d.isoformat()}")
+    lines.append(
+        "For each row: **create_calendar_block** (`date` = that ISO day, `duration_hours=2`, **start_hour** "
+        "by task index: 1→10, 2→14, 3→16, 4→11, 5→15, 6→9, 7→17, 8→13, then repeat). "
+        "Then **create_kanban_card** with **deadline** = that same ISO date. Do not call get_free_slots first."
+    )
+    return "\n".join(lines)
+
 
 def _get_calendar_service():
-    """Loads token.json and returns an authenticated Calendar client."""
+    """Loads token.json once per process and returns a cached Calendar client."""
+    global _calendar_service
+    if _calendar_service is not None:
+        return _calendar_service
+
     token_path = "/secrets/token.json" if os.path.exists("/secrets/token.json") else "token.json"
     if not os.path.exists(token_path):
         raise FileNotFoundError(
@@ -39,7 +128,39 @@ def _get_calendar_service():
         client_secret=os.environ["GOOGLE_CLIENT_SECRET"],
         scopes=SCOPES,
     )
-    return build("calendar", "v3", credentials=creds)
+    _calendar_service = build("calendar", "v3", credentials=creds)
+    return _calendar_service
+
+
+def _build_deep_work_event(
+    task_title: str,
+    day: date,
+    start_hour: int,
+    duration_hours: int,
+    description: str,
+) -> dict:
+    base = datetime(day.year, day.month, day.day, tzinfo=IST)
+    start_dt = base.replace(
+        hour=start_hour, minute=0, second=0, microsecond=0
+    )
+    end_dt = start_dt + timedelta(hours=duration_hours)
+    return {
+        "summary": f"🔒 Deep Work: {task_title}",
+        "description": description or f"Focused session for: {task_title}",
+        "start": {
+            "dateTime": start_dt.isoformat(),
+            "timeZone": "Asia/Kolkata",
+        },
+        "end": {
+            "dateTime": end_dt.isoformat(),
+            "timeZone": "Asia/Kolkata",
+        },
+        "colorId": "9",
+        "reminders": {
+            "useDefault": False,
+            "overrides": [{"method": "popup", "minutes": 10}],
+        },
+    }
 
 
 def create_calendar_block(
@@ -51,7 +172,7 @@ def create_calendar_block(
 ) -> str:
     """
     Creates a Deep Work time block on Google Calendar.
-    Use this BEFORE creating a Kanban card so the date is confirmed.
+    Prefer calling this before the matching Kanban card; no need to query free slots first.
 
     Args:
         task_title:      Name of the task, e.g. 'ALU Design'
@@ -65,39 +186,21 @@ def create_calendar_block(
     """
     try:
         service = _get_calendar_service()
-        base = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=IST)
-        start_dt = base.replace(
-            hour=start_hour, minute=0, second=0, microsecond=0
+        day = datetime.strptime(date, "%Y-%m-%d").date()
+        event = _build_deep_work_event(
+            task_title, day, start_hour, duration_hours, description
         )
-        end_dt = start_dt + timedelta(hours=duration_hours)
-
-        event = {
-            "summary": f"🔒 Deep Work: {task_title}",
-            "description": description or f"Focused session for: {task_title}",
-            "start": {
-                "dateTime": start_dt.isoformat(),
-                "timeZone": "Asia/Kolkata",
-            },
-            "end": {
-                "dateTime": end_dt.isoformat(),
-                "timeZone": "Asia/Kolkata",
-            },
-            "colorId":  "9",   # blueberry — visually distinct
-            "reminders": {
-                "useDefault": False,
-                "overrides": [{"method": "popup", "minutes": 10}],
-            },
-        }
 
         created = service.events().insert(
             calendarId=CALENDAR_ID, body=event
         ).execute()
 
-        link   = created.get("htmlLink", "no-link")
+        raw_link = created.get("htmlLink") or "no-link"
+        link = raw_link.strip() if isinstance(raw_link, str) else str(raw_link)
+        # Single-line Link: avoids broken URLs when logs/UI concatenate lines (e.g. "\\n3").
         return (
-            f"✅ Calendar block created: '🔒 Deep Work: {task_title}'\n"
-            f"   Date: {date} | {start_hour}:00 → {start_hour + duration_hours}:00 IST\n"
-            f"   Link: {link}"
+            f"✅ Calendar block created: '🔒 Deep Work: {task_title}' | "
+            f"Date: {date} {start_hour}:00–{start_hour + duration_hours}:00 IST | Link: {link}"
         )
 
     except Exception as e:
