@@ -23,11 +23,12 @@ IST = ZoneInfo("Asia/Kolkata")
 
 def _get_calendar_service():
     """Loads token.json and returns an authenticated Calendar client."""
-    if not os.path.exists("token.json"):
+    token_path = "/secrets/token.json" if os.path.exists("/secrets/token.json") else "token.json"
+    if not os.path.exists(token_path):
         raise FileNotFoundError(
             "token.json not found. Run auth_setup.py first to authenticate."
         )
-    with open("token.json") as f:
+    with open(token_path) as f:
         token_data = json.load(f)
 
     creds = Credentials(

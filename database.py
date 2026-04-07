@@ -12,13 +12,21 @@ from google.cloud.firestore_v1.base_query import FieldFilter
 load_dotenv()
 
 # Firebase init (once per process)
+cred_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+
+# If the env var is set but the file isn't in the container, remove it from env
+# to prevent GCP libraries (like Firestore) from crashing.
+if cred_path and not os.path.exists(cred_path):
+    del os.environ["GOOGLE_APPLICATION_CREDENTIALS"]
+    cred_path = None
+
 if not firebase_admin._apps:
-    cred_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
-    if not cred_path or not os.path.exists(cred_path):
-        raise FileNotFoundError("❌ Service account JSON not found. Check GOOGLE_APPLICATION_CREDENTIALS in .env")
-    
-    cred = credentials.Certificate(cred_path)
-    firebase_admin.initialize_app(cred)
+    if cred_path:
+        cred = credentials.Certificate(cred_path)
+        firebase_admin.initialize_app(cred)
+    else:
+        # Use Application Default Credentials when running on GCP (Cloud Run, etc)
+        firebase_admin.initialize_app()
 
 db = firestore.client()
 
@@ -294,4 +302,3 @@ memory_tools_phase3 = [
     clear_project_memory,
     get_memory_summary
 ]
-
