@@ -29,8 +29,37 @@ def mock_search_arxiv(query: str) -> str:
 # Mock Workspace Tool
 # ----------------------------
 
-def mock_prepare_workspace(project_name: str) -> str:
-    return f"[MOCK] Workspace prepared for project '{project_name}'"
+import os
+
+def prepare_workspace(project_name: str) -> str:
+    """
+    Creates a real project workspace with basic structure.
+    """
+
+    base_dir = "project_workspace"
+    project_dir = os.path.join(base_dir, project_name)
+
+    try:
+        # Create folders
+        os.makedirs(os.path.join(project_dir, "src"), exist_ok=True)
+        os.makedirs(os.path.join(project_dir, "tests"), exist_ok=True)
+        os.makedirs(os.path.join(project_dir, "docs"), exist_ok=True)
+
+        # Create README
+        readme_path = os.path.join(project_dir, "README.md")
+        with open(readme_path, "w") as f:
+            f.write(f"# {project_name}\n\n")
+            f.write("Project workspace generated automatically.\n")
+
+        # Create requirements file
+        req_path = os.path.join(project_dir, "requirements.txt")
+        with open(req_path, "w") as f:
+            f.write("# Add project dependencies here\n")
+
+        return f"Workspace created at: {project_dir}"
+
+    except Exception as e:
+        return f"Workspace creation failed: {str(e)}"
 
 
 # ----------------------------
@@ -111,7 +140,7 @@ After planning is complete, your job is to:
 Focus on practical developer setup.
 Keep output structured and ready-to-use.
 """,
-    tools=[mock_prepare_workspace],
+    tools=[prepare_workspace],
 )
 
 
