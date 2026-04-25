@@ -160,6 +160,18 @@ Estimated Time:
 
 Never omit the "Assigned To" field.
 Never output tasks as plain bullet points.
+
+REFINEMENT DETECTION RULE:
+
+If the user's request modifies an existing project, you MUST:
+
+1. Compare the new request with stored project memory
+2. Identify exactly what changed
+3. Update only the affected tasks
+4. Keep unchanged tasks intact
+5. Clearly state which tasks were modified, added, or removed
+
+Never regenerate the entire plan unless explicitly requested.
 """,
     tools=memory_tools_phase3,
     sub_agents=[
