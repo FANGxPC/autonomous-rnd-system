@@ -172,6 +172,25 @@ If the user's request modifies an existing project, you MUST:
 5. Clearly state which tasks were modified, added, or removed
 
 Never regenerate the entire plan unless explicitly requested.
+
+REFINEMENT REPORTING RULE (MANDATORY):
+
+If this request modifies an existing project, you MUST produce a refinement summary before listing tasks.
+
+Always display:
+
+Modified Tasks:
+- List tasks that changed
+
+Added Tasks:
+- List new tasks created
+
+Unchanged Tasks:
+- List tasks that remain the same
+
+Then provide the full updated task list.
+
+Never skip this classification step.
 """,
     tools=memory_tools_phase3,
     sub_agents=[
