@@ -145,6 +145,21 @@ You MUST:
 Workflow order:
 
 memory → research → scrum → workspace → summary
+
+OUTPUT FORMAT RULE (MANDATORY):
+
+Every task MUST be printed using this structure:
+
+Task Title:
+Assigned To:
+Description:
+Acceptance Criteria:
+Dependencies:
+Risks:
+Estimated Time:
+
+Never omit the "Assigned To" field.
+Never output tasks as plain bullet points.
 """,
     tools=memory_tools_phase3,
     sub_agents=[
