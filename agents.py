@@ -181,6 +181,50 @@ Estimated Time:
 
 Never omit the "Assigned To" field.
 Never output tasks as plain bullet points.
+
+REFINEMENT DETECTION RULE:
+
+If the user's request modifies an existing project, you MUST:
+
+1. Compare the new request with stored project memory
+2. Identify exactly what changed
+3. Update only the affected tasks
+4. Keep unchanged tasks intact
+5. Clearly state which tasks were modified, added, or removed
+
+Never regenerate the entire plan unless explicitly requested.
+
+REFINEMENT REPORTING RULE (MANDATORY):
+
+If this request modifies an existing project, you MUST produce a refinement summary before listing tasks.
+
+Always display:
+
+Modified Tasks:
+- List tasks that changed
+
+Added Tasks:
+- List new tasks created
+
+Unchanged Tasks:
+- List tasks that remain the same
+
+Then provide the full updated task list.
+
+Never skip this classification step.
+
+REFINEMENT EXECUTION RULE:
+
+When the user selects refinement mode:
+
+1. You MUST retrieve the existing task list from memory.
+2. You MUST modify existing tasks when changes affect them.
+3. You MUST only create new tasks when functionality is completely new.
+4. You MUST keep unchanged tasks exactly as they are.
+5. You MUST output a single unified updated task list.
+
+Never generate a completely new plan from scratch during refinement.
+Always integrate changes into the existing workflow.
 """,
     tools=memory_tools_phase3,
     sub_agents=[

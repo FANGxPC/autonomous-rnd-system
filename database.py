@@ -302,3 +302,41 @@ memory_tools_phase3 = [
     clear_project_memory,
     get_memory_summary
 ]
+
+# --------------------------------------------------
+# PROJECT REGISTRY
+# --------------------------------------------------
+
+PROJECTS_FILE = "projects_registry.json"
+
+
+def load_project_registry():
+
+    import json
+    import os
+
+    if not os.path.exists(PROJECTS_FILE):
+        return []
+
+    with open(PROJECTS_FILE, "r") as f:
+        return json.load(f)
+
+
+def save_project_registry(project_key):
+
+    import json
+    import os
+
+    projects = []
+
+    if os.path.exists(PROJECTS_FILE):
+
+        with open(PROJECTS_FILE, "r") as f:
+            projects = json.load(f)
+
+    if project_key not in projects:
+
+        projects.append(project_key)
+
+        with open(PROJECTS_FILE, "w") as f:
+            json.dump(projects, f, indent=2)
