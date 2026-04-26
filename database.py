@@ -20,15 +20,40 @@ if cred_path and not os.path.exists(cred_path):
     del os.environ["GOOGLE_APPLICATION_CREDENTIALS"]
     cred_path = None
 
-if not firebase_admin._apps:
-    if cred_path:
-        cred = credentials.Certificate(cred_path)
-        firebase_admin.initialize_app(cred)
-    else:
-        # Use Application Default Credentials when running on GCP (Cloud Run, etc)
-        firebase_admin.initialize_app()
+class MockFirestoreClient:
+    def __init__(self):
+        self.mock_db = {}
+    def collection(self, name):
+        return self
+    def document(self, name=None):
+        return self
+    def set(self, data):
+        return True
+    def where(self, *args, **kwargs):
+        return self
+    def stream(self):
+        return []
+    def order_by(self, *args, **kwargs):
+        return self
+    def limit(self, *args, **kwargs):
+        return self
 
-db = firestore.client()
+if not firebase_admin._apps:
+    try:
+        if cred_path:
+            cred = credentials.Certificate(cred_path)
+            firebase_admin.initialize_app(cred)
+        else:
+            firebase_admin.initialize_app()
+        db = firestore.client()
+    except Exception as e:
+        print(f"WARNING: [MOCK MODE] Firebase init failed: {e}. Switching to Mock Database.")
+        db = MockFirestoreClient()
+else:
+    try:
+        db = firestore.client()
+    except:
+        db = MockFirestoreClient()
 
 
 def save_project_context(project_key: str, category: str, value: str, notes: str = "") -> str:

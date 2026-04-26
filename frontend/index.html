@@ -1,136 +1,311 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Deep-Tech Sprint — Run pipeline</title>
-    <link rel="stylesheet" href="styles.css?v=3" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap"
-      rel="stylesheet"
-    />
-  </head>
-  <body>
-    <div class="page" id="page-root">
-      <header class="header">
-        <p class="eyebrow">Autonomous R&amp;D system</p>
-        <h1 class="title">Deep-Tech Sprint</h1>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>R&D Autonomous System | Control</title>
+  <link rel="stylesheet" href="styles.css?v=5" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
+</head>
+<body>
+  <div class="dashboard-layout" id="page-root">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-brand" style="justify-content: space-between;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div class="brand-hex">Σ</div>
+          <span class="brand-name">R&D System</span>
+        </div>
+        <button id="theme-toggle" class="theme-toggle-btn" aria-label="Toggle Theme">☀️</button>
+      </div>
+      
+      <nav class="sidebar-nav">
+        <button class="nav-item active" data-tab="run-pipeline" title="System Control">
+          <span class="nav-label">Control</span>
+        </button>
+        <button class="nav-item" data-tab="war-room" title="Agent Network">
+          <span class="nav-label">Team War-Room</span>
+        </button>
+        <button class="nav-item" data-tab="code-explorer" title="Mission Workspace">
+          <span class="nav-label">Workspace</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="connection-status">
+          <span class="status-dot online"></span>
+          <span>Core Link: OK</span>
+        </div>
+        <div id="ist-clock" class="sidebar-clock">--:--:-- IST</div>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <!-- Top Header -->
+      <header class="main-header">
+        <div class="header-breadcrumb">
+          <span class="breadcrumb-root">Home</span>
+          <span class="breadcrumb-sep">/</span>
+          <span id="active-view-name">Control</span>
+        </div>
+        
+        <div class="header-title-wrap">
+          <h1 class="app-title">R&D Autonomous System</h1>
+          <div class="session-badge">
+            <span class="badge-label">Active Session:</span>
+            <input type="text" id="active-project-key" value="idle" readonly />
+          </div>
+        </div>
       </header>
 
-      <main class="card" id="main-card">
-        <div id="form-panel">
-          <form id="pipeline-form" class="form" novalidate>
-            <div class="field">
-              <label class="label" for="description">Project description</label>
-              <textarea
-                id="description"
-                name="description"
-                class="input textarea"
-                rows="6"
-                spellcheck="true"
-                placeholder="e.g. Design a minimal 4-bit ripple-carry adder in Verilog with a testbench; cite references where useful."
-                autocomplete="off"
-              ></textarea>
-            </div>
-
-            <div class="field field--date">
-              <label class="label" for="deadline">Deadline</label>
-              <div class="date-input-wrap">
-                <input
-                  id="deadline"
-                  name="deadline"
-                  type="date"
-                  class="input input--date"
-                  aria-label="Project deadline (today or later)"
-                  aria-describedby="hint-deadline"
-                  autocomplete="off"
-                />
+      <!-- View Area -->
+      <div class="view-viewport">
+        
+        <!-- Command View -->
+        <section id="run-pipeline-view" class="view-layer active">
+          <div class="command-grid">
+            <!-- Config Column -->
+            <div class="glass-panel config-panel">
+              <div class="panel-header">
+                <h3>Sequence Configuration</h3>
+                <p>Define project scope and agent parameters</p>
               </div>
-              <p id="hint-deadline" class="hint">
-                Today or any future day. Tasks and calendar blocks spread from today through this deadline.
-              </p>
+              
+              <form id="pipeline-form" class="command-form" novalidate>
+                <div class="form-group">
+                  <label class="form-label">Mission Description</label>
+                  <textarea id="description" name="description" class="form-input form-textarea" rows="5" placeholder="Describe the R&D goal..."></textarea>
+                </div>
+
+                <div class="form-row">
+                  <div class="form-group">
+                    <label class="form-label">Completion Target</label>
+                    <input id="deadline" name="deadline" type="date" class="form-input" />
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Sequence ID</label>
+                    <input id="project-key" name="project_key" type="text" class="form-input" placeholder="project_key" />
+                  </div>
+                </div>
+
+                <div id="form-status" class="status-msg"></div>
+
+                <button type="submit" class="launch-btn" id="submit-btn">
+                  <span class="btn-text">Initiate R&D Sequence</span>
+                  <div class="btn-shimmer"></div>
+                </button>
+                
+                <p id="pipeline-wait-note" class="wait-note hidden">Agent allocation in progress... (5-10m expected)</p>
+              </form>
             </div>
 
-            <div class="field">
-              <label class="label" for="project-key">Project key</label>
-              <input
-                id="project-key"
-                name="project_key"
-                type="text"
-                class="input"
-                inputmode="text"
-                autocapitalize="none"
-                autocomplete="off"
-                placeholder="e.g. verilog_4bit_adder"
-                pattern="[a-zA-Z0-9_-]+"
-                title="Letters, numbers, underscores, and hyphens only"
-              />
-              <p class="hint">
-                Short id for this run (memory &amp; session scope). Use
-                lowercase, no spaces.
-              </p>
+            <!-- Visualizer Column (Live Workflow) -->
+            <div class="glass-panel visualizer-panel">
+              <div class="workflow-stage" id="workflow-stage">
+                <header class="workflow-header">
+                  <div class="workflow-title">LIVE EXECUTION GRAPH</div>
+                  <div class="workflow-controls">
+                    <span class="status-badge" id="execution-status">IDLE</span>
+                  </div>
+                </header>
+
+                <div class="workflow-canvas">
+                  <!-- Layer 1: Inputs -->
+                  <div class="workflow-column">
+                    <div class="workflow-node" id="wf-receive">
+                      <div class="node-icon">📥</div>
+                      <div class="node-content">
+                        <span class="node-title">Receive Query</span>
+                        <span class="node-meta">Awaiting Input...</span>
+                      </div>
+                      <div class="node-status-icon"></div>
+                    </div>
+                    <div class="workflow-node" id="wf-parse">
+                      <div class="node-icon">🧠</div>
+                      <div class="node-content">
+                        <span class="node-title">Parse Intent</span>
+                        <span class="node-meta">NLP Engine</span>
+                      </div>
+                      <div class="node-status-icon"></div>
+                    </div>
+                  </div>
+
+                  <!-- Connectors SVG -->
+                  <svg class="workflow-svg">
+                    <path class="wf-link" id="link-1" d="" />
+                    <path class="wf-link" id="link-2" d="" />
+                    <path class="wf-link" id="link-3" d="" />
+                    <path class="wf-link" id="link-4" d="" />
+                  </svg>
+
+                  <!-- Layer 2: Core Processing -->
+                  <div class="workflow-column">
+                    <div class="workflow-node node-wide" id="wf-orchestrate">
+                      <div class="node-icon">🕸️</div>
+                      <div class="node-content">
+                        <span class="node-title">Agent Orchestration</span>
+                        <span class="node-meta" id="orchestrate-meta">Idle</span>
+                      </div>
+                      <div class="node-status-icon"></div>
+                    </div>
+                  </div>
+
+                  <!-- Layer 3: Agents -->
+                  <div class="workflow-column">
+                    <div class="workflow-node" id="wf-research">
+                      <div class="node-icon">🔍</div>
+                      <div class="node-content">
+                        <span class="node-title">Research Agent</span>
+                        <span class="node-meta">Data Scraper</span>
+                      </div>
+                      <div class="node-status-icon"></div>
+                    </div>
+                    <div class="workflow-node" id="wf-architect">
+                      <div class="node-icon">👔</div>
+                      <div class="node-content">
+                        <span class="node-title">Tech Lead</span>
+                        <span class="node-meta">Design Engine</span>
+                      </div>
+                      <div class="node-status-icon"></div>
+                    </div>
+                  </div>
+
+                  <!-- Layer 4: Finalization -->
+                  <div class="workflow-column">
+                    <div class="workflow-node" id="wf-synthesize">
+                      <div class="node-icon">✨</div>
+                      <div class="node-content">
+                        <span class="node-title">Synthesize</span>
+                        <span class="node-meta">Building Artifacts</span>
+                      </div>
+                      <div class="node-status-icon"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
-
-            <p id="form-status" class="form-status" role="status" aria-live="polite"></p>
-            <p id="pipeline-wait-note" class="pipeline-wait-note hidden" aria-live="polite">
-              Larger or complex projects often take about <strong>5–10 minutes</strong> while agents
-              use Notion, Calendar, and the model — keep this tab open.
-            </p>
-
-            <button type="submit" class="submit" id="submit-btn">
-              Run pipeline
-            </button>
-          </form>
-        </div>
-
-        <div id="results-panel" class="results-panel hidden" aria-live="polite">
-          <div class="results-toolbar">
-            <button type="button" class="btn-secondary" id="new-run-btn">
-              ← New run
-            </button>
+          </div>
+          
+          <!-- Chat Input Area -->
+          <div class="chat-input-area">
+            <form id="chat-form" class="chat-form">
+              <input type="text" id="chat-input" class="chat-input" placeholder="Type a command to /refine the project..." autocomplete="off" />
+              <button type="submit" class="chat-submit-btn" aria-label="Send message">
+                <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+              </button>
+            </form>
           </div>
 
-          <div id="results-banner" class="results-banner" role="status"></div>
+          <!-- Results Overlay -->
+          <div id="results-panel" class="modal-overlay hidden">
+            <div class="glass-panel modal-card">
+              <button class="modal-close" id="new-run-btn">&times;</button>
+              <div id="results-banner" class="results-banner"></div>
+              
+              <div class="modal-scroll-area">
+                <section class="outcome-section">
+                  <h4 class="section-tag">Summary Report</h4>
+                  <div id="summary-text" class="summary-body"></div>
+                </section>
 
-          <section class="results-section" id="summary-section">
-            <h2 class="results-section-title">Summary</h2>
-            <div id="summary-text" class="summary-text"></div>
-          </section>
+                <div class="outcome-grid">
+                  <div id="notion-section" class="hidden">
+                    <h4 class="section-tag">Notion Hub</h4>
+                    <div class="link-grid" id="notion-link-cards"></div>
+                  </div>
+                  <div id="calendar-section" class="hidden">
+                    <h4 class="section-tag">Temporal Blocks</h4>
+                    <div class="link-grid" id="calendar-link-cards"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
 
-          <section class="results-section hidden" id="notion-section">
-            <h2 class="results-section-title">Notion</h2>
-            <p class="results-section-lead">
-              Open in Notion (log in if your workspace is private).
-            </p>
-            <div class="link-cards" id="notion-link-cards"></div>
-          </section>
+        <!-- War-Room View -->
+        <section id="war-room-view" class="view-layer hidden">
+          <header class="view-header">
+            <h2 class="view-title">Team War-Room</h2>
+            <p class="view-lead">Tactical task oversight and agent workload distribution.</p>
+          </header>
+          
+          <div id="war-room-grid" class="war-room-columns">
+            <div class="loading-state">
+              <div class="pulsar"></div>
+              <span>Syncing with Neural Network...</span>
+            </div>
+          </div>
+        </section>
 
-          <section class="results-section hidden" id="calendar-section">
-            <h2 class="results-section-title">Google Calendar</h2>
-            <p class="results-section-lead">
-              Deep Work blocks created during this run (open event or add to Calendar).
-            </p>
-            <div class="link-cards" id="calendar-link-cards"></div>
-          </section>
+        <!-- Code Explorer View -->
+        <section id="code-explorer-view" class="view-layer hidden">
+          <div class="explorer-grid">
+            <!-- Sidebar: File Tree -->
+            <aside class="explorer-sidebar glass-panel">
+              <header class="explorer-header">
+                <span class="explorer-title">ARTIFACT EXPLORER</span>
+                <button class="refresh-btn" id="refresh-files-btn" title="Sync Files">🔄</button>
+              </header>
+              <div id="file-tree" class="file-tree">
+                <div class="tree-loading">
+                  <div class="pulsar"></div>
+                  <span>Scanning Workspace...</span>
+                </div>
+              </div>
+            </aside>
 
+            <!-- Main: Code Previewer -->
+            <main class="code-previewer glass-panel">
+              <header class="preview-header">
+                <div class="file-info">
+                  <span class="file-icon">📄</span>
+                  <div class="file-names">
+                    <span id="active-filename" class="filename">README.md</span>
+                    <span id="file-path" class="filepath">/generated_workspaces/project/README.md</span>
+                  </div>
+                </div>
+                <div class="preview-actions">
+                  <button class="action-btn" id="copy-code-btn">Copy</button>
+                </div>
+              </header>
+              <div class="code-viewport">
+                <pre><code id="code-viewer" class="code-block"># SYSTEM READY
+                  
+Waiting for mission start to generate project artifacts.
+Once the R&D sequence completes, generated code and documentation will appear here.</code></pre>
+              </div>
+            </main>
+          </div>
+        </section>
+      </div>
+
+      <!-- Telemetry Footer -->
+      <footer class="telemetry-bar">
+        <div class="telemetry-header">
+          <div class="telemetry-title">
+            <span class="pulse-icon"></span>
+            LIVE AGENT TELEMETRY
+          </div>
+          <div class="telemetry-meta">
+            System uptime: 100% | Latency: 42ms
+          </div>
         </div>
-      </main>
-    </div>
+        <div class="telemetry-body" id="terminal-log">
+          <div class="log-entry">
+            <span class="log-time">--:--:--</span>
+            <span class="log-tag tag-sys">[SYSTEM]</span>
+            <span class="log-msg">Neural kernel loaded. Awaiting mission parameters.</span>
+          </div>
+        </div>
+      </footer>
+    </main>
+  </div>
 
-    <script>
-      if (typeof window.API_BASE === "undefined") {
-        window.API_BASE = "";
-      }
-    </script>
-    <script src="app.js?v=3"></script>
-    <script>
-      // Force reload CSS dynamically just in case cache-busting fails in Cloud Shell
-      const link = document.querySelector('link[href^="styles.css"]');
-      if (link) {
-          link.href = 'styles.css?v=' + new Date().getTime();
-      }
-    </script>
-  </body>
+  <script>window.API_BASE = "";</script>
+  <script src="app.js?v=4"></script>
+</body>
 </html>
