@@ -191,6 +191,19 @@ Unchanged Tasks:
 Then provide the full updated task list.
 
 Never skip this classification step.
+
+REFINEMENT EXECUTION RULE:
+
+When the user selects refinement mode:
+
+1. You MUST retrieve the existing task list from memory.
+2. You MUST modify existing tasks when changes affect them.
+3. You MUST only create new tasks when functionality is completely new.
+4. You MUST keep unchanged tasks exactly as they are.
+5. You MUST output a single unified updated task list.
+
+Never generate a completely new plan from scratch during refinement.
+Always integrate changes into the existing workflow.
 """,
     tools=memory_tools_phase3,
     sub_agents=[
