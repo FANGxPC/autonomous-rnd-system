@@ -1,20 +1,31 @@
 (function () {
+  // Elements
   const form = document.getElementById("pipeline-form");
-  const formPanel = document.getElementById("form-panel");
   const resultsPanel = document.getElementById("results-panel");
-  const pageRoot = document.getElementById("page-root");
-  const mainCard = document.getElementById("main-card");
   const statusEl = document.getElementById("form-status");
   const waitNoteEl = document.getElementById("pipeline-wait-note");
   const submitBtn = document.getElementById("submit-btn");
   const newRunBtn = document.getElementById("new-run-btn");
   const resultsBanner = document.getElementById("results-banner");
   const summaryText = document.getElementById("summary-text");
-  const summarySection = document.getElementById("summary-section");
   const notionSection = document.getElementById("notion-section");
   const notionLinkCards = document.getElementById("notion-link-cards");
   const calendarSection = document.getElementById("calendar-section");
   const calendarLinkCards = document.getElementById("calendar-link-cards");
+  const terminalLog = document.getElementById("terminal-log");
+  const activeProjectKeyInput = document.getElementById("active-project-key");
+  const activeViewName = document.getElementById("active-view-name");
+  const executionStatus = document.getElementById("execution-status");
+
+  // Workflow Nodes
+  const nodes = {
+    receive: document.getElementById("wf-receive"),
+    parse: document.getElementById("wf-parse"),
+    orchestrate: document.getElementById("wf-orchestrate"),
+    research: document.getElementById("wf-research"),
+    architect: document.getElementById("wf-architect"),
+    synthesize: document.getElementById("wf-synthesize")
+  };
 
   const API_BASE =
     typeof window !== "undefined" &&
@@ -23,11 +34,99 @@
       ? String(window.API_BASE).trim()
       : "";
 
-  function setFormStatus(message, kind) {
-    if (!statusEl) return;
-    statusEl.textContent = message;
-    statusEl.classList.remove("is-error", "is-ok", "is-wait");
-    if (kind) statusEl.classList.add(kind);
+  // --- Utilities ---
+  function getISTTime() {
+    return new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    }).format(new Date());
+  }
+
+  function updateLiveClock() {
+    const clockEl = document.getElementById("ist-clock");
+    if (clockEl) {
+      clockEl.textContent = `${getISTTime()} IST`;
+    }
+  }
+  setInterval(updateLiveClock, 1000);
+
+  function addLog(message, author = "sys") {
+    if (!terminalLog) return;
+    const entry = document.createElement("div");
+    entry.className = "log-entry";
+    const time = getISTTime();
+    entry.innerHTML = `<span class="log-time">${time}</span> <span class="log-tag tag-${author}">[${author.toUpperCase()}]</span> <span class="log-msg">${message}</span>`;
+    terminalLog.appendChild(entry);
+    terminalLog.scrollTop = terminalLog.scrollHeight;
+  }
+
+  function drawWorkflowLinks() {
+    const svg = document.querySelector(".workflow-svg");
+    if (!svg) return;
+
+    const getCenter = (el) => {
+      const rect = el.getBoundingClientRect();
+      const svgRect = svg.getBoundingClientRect();
+      return {
+        x: rect.left - svgRect.left + rect.width / 2,
+        y: rect.top - svgRect.top + rect.height / 2,
+        right: rect.right - svgRect.left,
+        left: rect.left - svgRect.left
+      };
+    };
+
+    const drawCurve = (start, end, id) => {
+      const path = document.getElementById(id);
+      if (!path) return;
+      const midX = (start.x + end.x) / 2;
+      const d = `M ${start.right} ${start.y} C ${midX} ${start.y}, ${midX} ${end.y}, ${end.left} ${end.y}`;
+      path.setAttribute("d", d);
+    };
+
+    // Connections
+    drawCurve(getCenter(nodes.receive), getCenter(nodes.orchestrate), "link-1");
+    drawCurve(getCenter(nodes.parse), getCenter(nodes.orchestrate), "link-2");
+    drawCurve(getCenter(nodes.orchestrate), getCenter(nodes.research), "link-3");
+    drawCurve(getCenter(nodes.orchestrate), getCenter(nodes.architect), "link-4");
+  }
+
+  async function animateWorkflow() {
+    const reset = () => {
+      Object.values(nodes).forEach(n => n.classList.remove("active", "completed"));
+      document.querySelectorAll(".wf-link").forEach(l => l.classList.remove("active"));
+    };
+
+    reset();
+    if (executionStatus) executionStatus.textContent = "RUNNING";
+
+    const step = async (nodeId, linkId, duration = 1500, logMsg = "", logAuthor = "sys") => {
+      const node = nodes[nodeId];
+      if (node) node.classList.add("active");
+      if (linkId) document.getElementById(linkId)?.classList.add("active");
+      
+      if (logMsg) {
+        addLog(logMsg, logAuthor);
+      }
+      
+      await new Promise(r => setTimeout(r, duration));
+      
+      if (node) {
+        node.classList.remove("active");
+        node.classList.add("completed");
+      }
+    };
+
+    await step("receive", "link-1", 1000, "Intercepting incoming mission parameters...", "sys");
+    await step("parse", "link-2", 1000, "NLP Engine parsing intent and extracting scope.", "sys");
+    await step("orchestrate", "link-3", 1500, "Allocating tasks to specialized agent network.", "orchestrator");
+    await step("research", null, 2000, "Scraping technical docs and competitive data...", "research");
+    await step("architect", "link-4", 2000, "Drafting system architecture and verifying constraints...", "tech_lead");
+    await step("synthesize", null, 1500, "Synthesizing final artifacts for deployment.", "sys");
+
+    if (executionStatus) executionStatus.textContent = "COMPLETED";
   }
 
   function escapeHtml(s) {
@@ -36,258 +135,209 @@
     return d.innerHTML;
   }
 
-  /** Local calendar date YYYY-MM-DD (not UTC — avoids off-by-one). */
-  function todayISO() {
-    const d = new Date();
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    return `${y}-${m}-${day}`;
-  }
+  // --- Initializers ---
+  window.addEventListener("resize", drawWorkflowLinks);
+  setTimeout(drawWorkflowLinks, 500);
 
-  function defaultDeadlineSuggestedISO() {
+  const deadlineEl = document.getElementById("deadline");
+  if (deadlineEl) {
     const d = new Date();
+    const min = d.toISOString().split('T')[0];
+    deadlineEl.setAttribute("min", min);
     d.setDate(d.getDate() + 14);
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    return `${y}-${m}-${day}`;
+    deadlineEl.value = d.toISOString().split('T')[0];
   }
 
-  function initDeadlineField() {
-    const el = document.getElementById("deadline");
-    if (!el) return;
-    const min = todayISO();
-    el.setAttribute("min", min);
-    if (!el.value || el.value < min) {
-      const suggested = defaultDeadlineSuggestedISO();
-      el.value = suggested < min ? min : suggested;
-    }
-    el.addEventListener("change", function () {
-      if (el.value && el.value < min) el.value = min;
+  // --- Event Listeners ---
+  if (form) {
+    form.addEventListener("submit", async function (e) {
+      e.preventDefault();
+      const prompt = document.getElementById("description")?.value?.trim();
+      const deadline = document.getElementById("deadline")?.value;
+      const project_key = document.getElementById("project-key")?.value?.trim();
+
+      if (!prompt || !deadline || !project_key) {
+        if (statusEl) statusEl.textContent = "Parameters required.";
+        return;
+      }
+
+      if (activeProjectKeyInput) activeProjectKeyInput.value = project_key;
+      submitBtn.disabled = true;
+      if (waitNoteEl) waitNoteEl.classList.remove("hidden");
+      
+      addLog(`Initiating R&D sequence: ${project_key}`, "sys");
+      animateWorkflow();
+
+      try {
+        const res = await fetch(`${API_BASE}/trigger-pipeline`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt, deadline, project_key }),
+        });
+        const body = await res.json();
+        showResultsView(body);
+      } catch (err) {
+        showResultsView({ status: "error", error: String(err) });
+      } finally {
+        submitBtn.disabled = false;
+        if (waitNoteEl) waitNoteEl.classList.add("hidden");
+      }
     });
   }
 
-  function linkCard(href, title, subtitle, variant) {
-    const v = variant ? ` link-card--${variant}` : "";
-    return (
-      `<article class="link-card${v}">` +
-      `<h3 class="link-card-title">${escapeHtml(title)}</h3>` +
-      (subtitle
-        ? `<p class="link-card-sub">${escapeHtml(subtitle)}</p>`
-        : "") +
-      `<div class="link-card-actions">` +
-      `<button type="button" class="link-card-btn open-layer-btn" data-href="${escapeHtml(href)}">Open</button>` +
-      `<a class="link-card-btn link-card-btn--ghost" href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">New tab</a>` +
-      `</div></article>`
-    );
-  }
-
-  function showFormView() {
-    if (formPanel) formPanel.classList.remove("hidden");
-    if (resultsPanel) resultsPanel.classList.add("hidden");
-    if (pageRoot) pageRoot.classList.remove("page--results");
-    if (mainCard) mainCard.classList.remove("card--results");
-    if (waitNoteEl) waitNoteEl.classList.add("hidden");
-    setFormStatus("", null);
+  const chatForm = document.getElementById("chat-form");
+  const chatInput = document.getElementById("chat-input");
+  if (chatForm && chatInput) {
+    chatForm.addEventListener("submit", async function(e) {
+      e.preventDefault();
+      const message = chatInput.value.trim();
+      if (!message) return;
+      
+      chatInput.value = "";
+      addLog(`User: ${message}`, "sys");
+      addLog("Sending prompt to /refine endpoint...", "orchestrator");
+      
+      // Mock network delay
+      await new Promise(r => setTimeout(r, 1000));
+      
+      addLog("Refining artifacts based on user feedback.", "tech_lead");
+    });
   }
 
   function showResultsView(body) {
-    if (formPanel) formPanel.classList.add("hidden");
     if (resultsPanel) resultsPanel.classList.remove("hidden");
-    if (pageRoot) pageRoot.classList.add("page--results");
-    if (mainCard) mainCard.classList.add("card--results");
-
-    const ok =
-      body &&
-      body.status === "success" &&
-      (!body.error || body.error === "");
-
     if (resultsBanner) {
-      resultsBanner.classList.remove(
-        "results-banner--ok",
-        "results-banner--err"
-      );
-      if (ok) {
-        resultsBanner.textContent = "Pipeline completed successfully.";
-        resultsBanner.classList.add("results-banner--ok");
-      } else {
-        resultsBanner.textContent =
-          body && body.status === "error"
-            ? "Pipeline reported an error — see summary below."
-            : "Request finished with issues — see below.";
-        resultsBanner.classList.add("results-banner--err");
-      }
+      resultsBanner.textContent = body.status === "success" ? "Sequence Success" : "Sequence Failed";
+      resultsBanner.className = `results-banner results-banner--${body.status === "success" ? "ok" : "err"}`;
     }
-
-    const summary =
-      (body && body.outcome && body.outcome.summary) ||
-      (body && body.error) ||
-      "";
-    if (summaryText) {
-      summaryText.innerHTML = escapeHtml(summary).replace(/\n/g, "<br />");
-    }
-    if (summarySection) {
-      summarySection.classList.toggle("hidden", !String(summary).trim());
-    }
-
-    if (notionLinkCards) notionLinkCards.innerHTML = "";
-    if (notionSection) notionSection.classList.add("hidden");
-
-    const n = body && body.notion;
-    if (n && notionLinkCards && notionSection) {
-      const cards = [];
-      if (n.run_page_url) {
-        cards.push(
-          linkCard(
-            n.run_page_url,
-            "This run — Notion page",
-            "Tasks, Kanban DB, and notes for this pipeline run.",
-            "notion"
-          )
-        );
-      }
-      if (n.hub_page_url) {
-        cards.push(
-          linkCard(
-            n.hub_page_url,
-            "Runs hub",
-            "Parent workspace; all run pages live under here.",
-            "notion-secondary"
-          )
-        );
-      }
-      if (n.kanban_database_id) {
-        const dbUrl = `https://www.notion.so/${String(n.kanban_database_id).replace(/-/g, "")}`;
-        cards.push(
-          linkCard(
-            dbUrl,
-            "This run — Kanban database",
-            "Per-run task board (when NOTION_RUN_USE_KANBAN_DB=1).",
-            "notion-secondary"
-          )
-        );
-      }
-      if (cards.length) {
-        notionLinkCards.innerHTML = cards.join("");
-        notionSection.classList.remove("hidden");
-      }
-    }
-
-    if (calendarLinkCards) calendarLinkCards.innerHTML = "";
-    if (calendarSection) calendarSection.classList.add("hidden");
-    const cals = body && body.calendar_event_links;
-    if (Array.isArray(cals) && cals.length && calendarLinkCards && calendarSection) {
-      calendarLinkCards.innerHTML = cals
-        .map(function (url, i) {
-          return linkCard(
-            url,
-            "Calendar event " + (i + 1),
-            "Google Calendar — Deep Work block from this run.",
-            "calendar"
-          );
-        })
-        .join("");
-      calendarSection.classList.remove("hidden");
+    if (summaryText) summaryText.textContent = body.outcome?.summary || body.error || "";
+    
+    const notionCards = document.getElementById("notion-link-cards");
+    if (notionCards && body.notion?.run_page_url) {
+      notionCards.innerHTML = `<a href="${body.notion.run_page_url}" target="_blank" class="link-card"><h3 class="link-card-title">Notion Workspace</h3></a>`;
+      document.getElementById("notion-section").classList.remove("hidden");
     }
   }
 
-  if (newRunBtn) {
-    newRunBtn.addEventListener("click", showFormView);
-  }
+  // Tab switching
+  document.querySelectorAll(".nav-item").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const tab = btn.getAttribute("data-tab");
+      document.querySelectorAll(".nav-item").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      document.querySelectorAll(".view-layer").forEach(v => v.classList.add("hidden"));
+      document.getElementById(`${tab}-view`).classList.remove("hidden");
+      if (activeViewName) {
+        activeViewName.textContent = 
+          tab === "run-pipeline" ? "Control" : 
+          tab === "war-room" ? "Team War-Room" : "Workspace";
+      }
+      if (tab === "code-explorer") renderFileTree();
+      if (tab === "war-room") renderWarRoom();
+      if (tab === "run-pipeline") setTimeout(drawWorkflowLinks, 100);
+    });
+  });
 
-  initDeadlineField();
+  // --- Mock Data ---
+  const MOCK_TEAM_TASKS = [
+    { agent: "Tech Lead", title: "System Architecture Design", status: "In Progress", priority: "High" },
+    { agent: "Tech Lead", title: "API Endpoint Mapping", status: "Done", priority: "Medium" },
+    { agent: "Research Agent", title: "Market Competitor Analysis", status: "Pending", priority: "High" },
+    { agent: "Research Agent", title: "Vector DB Benchmarking", status: "In Progress", priority: "Medium" },
+    { agent: "Scrum Master", title: "Sprint Planning: Wave 1", status: "Done", priority: "High" },
+    { agent: "Scrum Master", title: "Daily Sync Orchestration", status: "In Progress", priority: "Low" }
+  ];
 
-  if (!form || !statusEl || !submitBtn) return;
+  const MOCK_FILES = [
+    { name: "src", type: "folder", children: [
+      { name: "main.py", type: "file", content: "# Main Entry Point\nprint('System Online')" },
+      { name: "agents.py", type: "file", content: "class Agent:\n    pass" }
+    ]},
+    { name: "docs", type: "folder", children: [
+      { name: "README.md", type: "file", content: "# Project Workspace\nThis is the generated project documentation." }
+    ]},
+    { name: "config.json", type: "file", content: "{\n  \"version\": \"1.0.0\"\n}" }
+  ];
 
-  form.addEventListener("submit", async function (e) {
-    e.preventDefault();
-    setFormStatus("", null);
+  function renderWarRoom() {
+    const grid = document.getElementById("war-room-grid");
+    if (!grid) return;
+    
+    // Group tasks by agent
+    const grouped = MOCK_TEAM_TASKS.reduce((acc, task) => {
+      if (!acc[task.agent]) acc[task.agent] = [];
+      acc[task.agent].push(task);
+      return acc;
+    }, {});
 
-    const prompt = document.getElementById("description")?.value?.trim() ?? "";
-    const deadlineEl = document.getElementById("deadline");
-    const deadline = deadlineEl?.value ?? "";
-    const deadlineMin = deadlineEl?.getAttribute("min") || todayISO();
-    const project_key =
-      document.getElementById("project-key")?.value?.trim() ?? "";
+    grid.innerHTML = "";
+    
+    Object.entries(grouped).forEach(([agent, tasks]) => {
+      const column = document.createElement("div");
+      column.className = "war-room-column glass-panel";
+      
+      const header = document.createElement("div");
+      header.className = "column-header";
+      header.innerHTML = `<h3>${agent}</h3><span class="task-count">${tasks.length} Tasks</span>`;
+      column.appendChild(header);
 
-    if (!prompt) {
-      setFormStatus("Please enter a project description.", "is-error");
-      return;
-    }
-    if (!deadline) {
-      setFormStatus("Please choose a deadline.", "is-error");
-      return;
-    }
-    if (deadline < deadlineMin) {
-      setFormStatus("Deadline cannot be before today.", "is-error");
-      return;
-    }
-    if (!project_key) {
-      setFormStatus("Please enter a project key.", "is-error");
-      return;
-    }
-
-    const base = API_BASE.replace(/\/$/, "");
-    const url = base ? `${base}/trigger-pipeline` : "/trigger-pipeline";
-    submitBtn.disabled = true;
-    if (waitNoteEl) waitNoteEl.classList.remove("hidden");
-    setFormStatus("Running pipeline…", "is-wait");
-
-    try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, deadline, project_key }),
+      const taskList = document.createElement("div");
+      taskList.className = "task-list";
+      
+      tasks.forEach(task => {
+        const card = document.createElement("div");
+        card.className = "task-card";
+        card.innerHTML = `
+          <div class="task-priority priority-${task.priority.toLowerCase()}">${task.priority}</div>
+          <div class="task-title">${task.title}</div>
+          <div class="task-status">${task.status}</div>
+        `;
+        taskList.appendChild(card);
       });
+      
+      column.appendChild(taskList);
+      grid.appendChild(column);
+    });
+  }
 
-      const text = await res.text();
-      let body;
-      try {
-        body = text ? JSON.parse(text) : {};
-      } catch {
-        body = { raw: text, status: "error", error: "Invalid JSON response" };
-      }
+  function renderFileTree() {
+    const tree = document.getElementById("file-tree");
+    if (!tree) return;
+    tree.innerHTML = "";
 
-      showResultsView(body);
-
-      if (!res.ok) {
-        setFormStatus(`HTTP ${res.status} — see results below.`, "is-error");
-      } else if (body.status === "error") {
-        setFormStatus("Error status in response — see results below.", "is-error");
+    function buildNode(item, container, path = "") {
+      const el = document.createElement("div");
+      el.className = `tree-node ${item.type}`;
+      const currentPath = path ? `${path}/${item.name}` : item.name;
+      
+      if (item.type === "folder") {
+        el.innerHTML = `<span class="toggle">📂</span> <span class="node-name">${item.name}</span>`;
+        const childrenContainer = document.createElement("div");
+        childrenContainer.className = "node-children";
+        item.children.forEach(child => buildNode(child, childrenContainer, currentPath));
+        el.appendChild(childrenContainer);
       } else {
-        setFormStatus("", null);
+        el.innerHTML = `<span class="icon">📄</span> <span class="node-name">${item.name}</span>`;
+        el.addEventListener("click", () => {
+          document.getElementById("active-filename").textContent = item.name;
+          document.getElementById("file-path").textContent = `/workspace/${currentPath}`;
+          document.getElementById("code-viewer").textContent = item.content;
+        });
       }
-    } catch (err) {
-      const errBody = {
-        status: "error",
-        error: String(err.message || err),
-      };
-      showResultsView(errBody);
-      setFormStatus(
-        "Network error — is the server running?",
-        "is-error"
-      );
-    } finally {
-      submitBtn.disabled = false;
-      if (waitNoteEl) waitNoteEl.classList.add("hidden");
+      container.appendChild(el);
     }
-  });
 
-  // Layer Overlay Logic (Fallback to Popup for sites with X-Frame-Options restrictions)
-  document.body.addEventListener("click", (e) => {
-    const btn = e.target.closest(".open-layer-btn");
-    if (btn) {
-      e.preventDefault();
-      const href = btn.getAttribute("data-href");
-      if (href) {
-        // Those sites block iframes, so use a clean popup window instead
-        const w = Math.min(1000, window.screen.width - 40);
-        const h = Math.min(800, window.screen.height - 40);
-        const left = Math.max(0, (window.screen.width - w) / 2);
-        const top = Math.max(0, (window.screen.height - h) / 2);
-        window.open(href, 'PopupOverlay', `width=${w},height=${h},top=${top},left=${left},toolbar=no,menubar=no,scrollbars=yes,resizable=yes,status=no`);
-      }
-    }
-  });
+    MOCK_FILES.forEach(file => buildNode(file, tree));
+  }
+
+  // Theme Toggle
+  const themeToggle = document.getElementById("theme-toggle");
+  if (themeToggle) {
+    themeToggle.addEventListener("click", () => {
+      document.body.classList.toggle("light-theme");
+      const isLight = document.body.classList.contains("light-theme");
+      themeToggle.textContent = isLight ? "🌙" : "☀️";
+    });
+  }
+
 })();
