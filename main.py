@@ -70,16 +70,30 @@ app.add_middleware(CORSMiddleware, **_cors_kw)
 console = Console()
 
 
+class TeamMember(BaseModel):
+    name: str = ""
+    role: str = ""
+    email: str = ""
+
 class TriggerRequest(BaseModel):
     prompt: str
     deadline: str = "2026-04-30"
     project_key: str = Field(default="hackathon_demo", description="Firestore + session scope")
+    num_teammates: int = 0
+    team_members: list[TeamMember] | None = None
 
 
 def _user_message(req: TriggerRequest) -> str:
+    team_info = ""
+    if req.team_members:
+        team_info = "Team Members provided via API:\n" + "\n".join([f"- Name: {m.name}, Role: {m.role}, Email: {m.email}" for m in req.team_members]) + "\n\n"
+    elif req.num_teammates > 0:
+        team_info = f"Team size provided via API: {req.num_teammates} teammates.\n\n"
+
     base = (
         f"project_key: {req.project_key}\n"
         f"deadline: {req.deadline}\n\n"
+        f"{team_info}"
         f"User request:\n{req.prompt}\n\n"
         "Use the memory tools with the given project_key. "
     )
@@ -342,8 +356,9 @@ async def trigger_pipeline(request: TriggerRequest):
     notion_run: dict[str, str] | None = None
     notion_reset_token = None
     try:
+        team_dict = [m.model_dump() for m in request.team_members] if request.team_members else None
         notion_run, notion_reset_token = begin_notion_run_workspace(
-            request.project_key
+            request.project_key, team_members=team_dict
         )
     except APIResponseError as e:
         console.print(Rule("[bold red]NOTION RUNS HUB[/bold red]", style="red"))

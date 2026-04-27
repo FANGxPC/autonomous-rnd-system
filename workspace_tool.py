@@ -20,13 +20,16 @@ def _slug(name: str) -> str:
     return s or "project"
 
 
-def prepare_project_workspace(project_name: str, short_summary: str = "") -> str:
+def prepare_project_workspace(project_name: str, short_summary: str = "", num_teammates: int = 0, team_members: list[dict[str, str]] | None = None) -> str:
     """
     Create a directory under WORKSPACE_OUTPUT_DIR with docs/, src/, and README.md.
+    Generates personalized sub-directories for each member if team details are provided.
 
     Args:
         project_name: Human-readable name (used for folder slug and README title).
         short_summary: Optional one-line description for README.
+        num_teammates: The number of team members down for the project.
+        team_members: Optional list of team member objects, e.g. [{"name": "Alice", "role": "Backend"}].
 
     Returns:
         Absolute path and confirmation text (or error string).
@@ -44,6 +47,26 @@ def prepare_project_workspace(project_name: str, short_summary: str = "") -> str
         base.mkdir(parents=True, exist_ok=True)
         (base / "docs").mkdir(exist_ok=True)
         (base / "src").mkdir(exist_ok=True)
+        
+        # Create per-user folders fallback to num_teammates if needed
+        members_to_create = team_members or []
+        if not members_to_create and num_teammates > 0:
+            members_to_create = [{"name": f"Teammate {i+1}", "role": "Developer"} for i in range(num_teammates)]
+            
+        if members_to_create:
+            for member in members_to_create:
+                m_name = _slug(member.get("name", "teammate"))
+                m_dir = base / m_name
+                m_dir.mkdir(exist_ok=True)
+                
+                m_role = member.get("role", "Developer").lower()
+                m_readme = m_dir / "README.md"
+                m_readme_content = f"# {member.get('name', 'Teammate')} Workspace\n\nRole: {member.get('role', 'Developer')}\n\nPersonal workspace for {name}.\n"
+                m_readme.write_text(m_readme_content, encoding="utf-8")
+                
+                # Generic text file for their notes
+                (m_dir / "notes.md").write_text("# Notes\n\n- Start adding your thoughts here.\n", encoding="utf-8")
+
     except OSError as e:
         return f"❌ Workspace: could not create directories: {e}"
 
@@ -57,15 +80,21 @@ def prepare_project_workspace(project_name: str, short_summary: str = "") -> str
 
 - `src/` — application or experiment code
 - `docs/` — notes, design, API sketches
-
-Generated automatically; safe to edit or delete.
 """
+    if members_to_create:
+        body += "\n## Team Workspaces\n\n"
+        for member in members_to_create:
+            m_name = _slug(member.get("name", "teammate"))
+            body += f"- `{m_name}/` — workspace for {member.get('name', 'Team Member')} ({member.get('role', 'Developer')})\n"
+
+    body += "\nGenerated automatically; safe to edit or delete.\n"
+    
     try:
         readme.write_text(body, encoding="utf-8")
     except OSError as e:
         return f"❌ Workspace: could not write README: {e}"
 
-    return (
-        f"✅ Workspace ready at `{base}`\n"
-        f"   Created: README.md, docs/, src/"
-    )
+    confirm_msg = f"✅ Workspace ready at `{base}`\n   Created: README.md, docs/, src/"
+    if members_to_create:
+        confirm_msg += f", and {len(members_to_create)} team member subdirectories."
+    return confirm_msg

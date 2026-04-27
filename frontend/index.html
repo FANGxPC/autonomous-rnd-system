@@ -91,6 +91,28 @@
                   </div>
                 </div>
 
+                <!-- Team Configuration -->
+                <div class="team-config-section">
+                  <div class="team-toggle-row">
+                    <label class="form-label">Team Configuration</label>
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="team-toggle" />
+                      <span class="toggle-slider"></span>
+                    </label>
+                  </div>
+
+                  <div id="team-config-body" class="team-config-body hidden">
+                    <div class="form-group">
+                      <label class="form-label">Number of Teammates</label>
+                      <input id="num-teammates" type="number" class="form-input" min="1" max="10" value="2" />
+                    </div>
+                    <div id="team-members-container" class="team-members-container">
+                      <!-- Dynamically generated member rows -->
+                    </div>
+                    <button type="button" id="generate-member-rows-btn" class="generate-rows-btn">Generate Member Fields</button>
+                  </div>
+                </div>
+
                 <div id="form-status" class="status-msg"></div>
 
                 <button type="submit" class="launch-btn" id="submit-btn">
