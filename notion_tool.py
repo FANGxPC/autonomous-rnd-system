@@ -381,12 +381,14 @@ _ENV_REQ_PAGE_ID = "_RND_NOTION_REQ_PAGE_ID"
 _ENV_REQ_PAGE_URL = "_RND_NOTION_REQ_PAGE_URL"
 _ENV_REQ_KANBAN_DB = "_RND_NOTION_REQ_KANBAN_DB"
 _ENV_REQ_KANBAN_SCHEMA = "_RND_NOTION_REQ_KANBAN_SCHEMA"
+_ENV_REQ_MEMBER_DBS = "_RND_NOTION_REQ_MEMBER_DBS"
 _REQUEST_ENV_KEYS = (
     _ENV_REQ_ACTIVE,
     _ENV_REQ_PAGE_ID,
     _ENV_REQ_PAGE_URL,
     _ENV_REQ_KANBAN_DB,
     _ENV_REQ_KANBAN_SCHEMA,
+    _ENV_REQ_MEMBER_DBS,
 )
 
 
@@ -684,7 +686,7 @@ def _rich_date(prop: dict[str, Any]) -> str:
     return d["start"] if d else "No deadline"
 
 
-def begin_notion_run_workspace(project_key: str) -> tuple[dict[str, str] | None, Token | None]:
+def begin_notion_run_workspace(project_key: str, team_members: list[dict[str, str]] | None = None) -> tuple[dict[str, str] | None, Token | None]:
     """
     If NOTION_RUNS_PARENT_PAGE_ID is set: create a child page under that hub.
 
@@ -715,7 +717,48 @@ def begin_notion_run_workspace(project_key: str) -> tuple[dict[str, str] | None,
     run_url = run_page.get("url", "")
 
     db_id: str | None = None
-    if _runs_use_kanban_db():
+    member_db_map: dict[str, str] = {}  # member_name -> kanban_database_id
+
+    if team_members:
+        # ── Per-member sub-pages, each with its own Kanban DB ──
+        for member in team_members:
+            m_name = member.get("name", "Teammate")
+            m_role = member.get("role", "Developer")
+            member_page = _notion.pages.create(
+                parent={"page_id": run_page_id},
+                properties={
+                    "title": {
+                        "title": [{"type": "text", "text": {"content": f"{m_name}'s Workspace ({m_role})"}}]
+                    }
+                }
+            )
+            member_page_id = member_page["id"]
+            m_db_title = f"Tasks — {m_name}"[:2000]
+            m_db = _notion.databases.create(
+                parent={"type": "page_id", "page_id": member_page_id},
+                title=[{"type": "text", "text": {"content": m_db_title}}],
+                properties={
+                    "Name": {"title": {}},
+                    "Status": {
+                        "select": {
+                            "options": [
+                                {"name": "To Do", "color": "gray"},
+                                {"name": "In Progress", "color": "blue"},
+                                {"name": "Done", "color": "green"},
+                            ]
+                        }
+                    },
+                    "Deadline": {"date": {}},
+                },
+            )
+            m_db_id = _normalize_notion_id(m_db["id"])
+            member_db_map[m_name.lower().strip()] = m_db_id
+
+        # Use the first member's DB as the default fallback
+        db_id = next(iter(member_db_map.values()), None)
+
+    elif _runs_use_kanban_db():
+        # ── Single shared Kanban DB (no team) ──
         db_title = f"Tasks — {safe_key}"[:2000]
         db = _notion.databases.create(
             parent={"type": "page_id", "page_id": run_page_id},
@@ -768,6 +811,8 @@ def begin_notion_run_workspace(project_key: str) -> tuple[dict[str, str] | None,
         except Exception:
             kanban_schema_json = json.dumps(FIXED_RUN_SCHEMA)
     _install_request_env(ctx, kanban_schema_json)
+    if member_db_map:
+        os.environ[_ENV_REQ_MEMBER_DBS] = json.dumps(member_db_map)
 
     meta: dict[str, str] = {
         "run_page_id": run_page_id,
@@ -784,24 +829,46 @@ def end_notion_run_workspace(reset_token: Token | None) -> None:
         _run_ctx.reset(reset_token)
 
 
+def _get_member_db_id(member_name: str) -> str | None:
+    """Look up a per-member Kanban DB id from the env registry."""
+    raw = os.environ.get(_ENV_REQ_MEMBER_DBS, "").strip()
+    if not raw:
+        return None
+    try:
+        db_map = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    key = (member_name or "").lower().strip()
+    if key in db_map:
+        return db_map[key]
+    # Fuzzy: check if the name is a substring of any key or vice-versa
+    for k, v in db_map.items():
+        if key in k or k in key:
+            return v
+    return None
+
+
 def create_kanban_card(
     title: str,
     status: str,
     deadline: str,
     description: str = "",
     sources: str = "",
+    assignee_name: str = "",
 ) -> str:
     """
     Creates a task: either a Kanban row (template or per-run DB) or a to-do block on the run page.
-    Use this to create project tasks with deadlines.
+    If assignee_name is given and per-member Kanban boards exist, the card is placed in
+    that member's personal board instead of the shared one.
 
     Args:
-        title:       The task title, e.g. 'ALU Design'
-        status:      One of: 'To Do', 'In Progress', 'Done' (must match a Notion option)
-        deadline:    ISO date string like '2026-05-15'
-        description: Task detail: scope, bullets (* or - lines), **bold** labels, multiple paragraphs OK.
-        sources:     Optional. Newline-separated URLs and citations; rendered under **Sources & references**
-                     at the bottom of the card (clickable links when lines contain http/https URLs).
+        title:         The task title, e.g. 'ALU Design'
+        status:        One of: 'To Do', 'In Progress', 'Done' (must match a Notion option)
+        deadline:      ISO date string like '2026-05-15'
+        description:   Task detail: scope, bullets (* or - lines), **bold** labels, multiple paragraphs OK.
+        sources:       Optional. Newline-separated URLs and citations; rendered under **Sources & references**
+                       at the bottom of the card (clickable links when lines contain http/https URLs).
+        assignee_name: Name of the team member to route this card to their personal Kanban board.
 
     Returns:
         A confirmation string with the Notion page URL
@@ -816,6 +883,14 @@ def create_kanban_card(
                 f"✅ Task added to run page: '{title}' [{status}] due {deadline} "
                 f"→ {ctx.run_page_url}"
             )
+
+        # Resolve which DB to write to: member-specific or shared
+        target_db_id: str | None = None
+        routed_to = ""
+        if assignee_name:
+            target_db_id = _get_member_db_id(assignee_name)
+            if target_db_id:
+                routed_to = f" → {assignee_name}'s board"
 
         s = _get_schema()
         tname, st_name, st_kind, dname = (
@@ -856,8 +931,9 @@ def create_kanban_card(
         children.extend(_sources_to_blocks(sources))
 
         first_children = children[:100]
+        db_to_use = target_db_id or _current_database_id()
         create_kw: dict[str, Any] = {
-            "parent": {"database_id": _current_database_id()},
+            "parent": {"database_id": db_to_use},
             "properties": properties,
         }
         if first_children:
@@ -868,7 +944,7 @@ def create_kanban_card(
             _append_blocks_batched(page["id"], rest)
 
         url = page.get("url", "no-url")
-        return f"✅ Notion card created: '{title}' [{status}] due {deadline} → {url}"
+        return f"✅ Notion card created: '{title}' [{status}] due {deadline}{routed_to} → {url}"
 
     except Exception as e:
         return f"❌ Notion error: {str(e)}"

@@ -168,7 +168,8 @@ def create_calendar_block(
     date: str,
     start_hour: int = 14,
     duration_hours: int = 2,
-    description: str = ""
+    description: str = "",
+    calendar_email: str = ""
 ) -> str:
     """
     Creates a Deep Work time block on Google Calendar.
@@ -180,19 +181,49 @@ def create_calendar_block(
         start_hour:      Start hour in 24h format (default 14 = 2 PM IST)
         duration_hours:  How many hours to block (default 2)
         description:     Optional notes for the calendar event
+        calendar_email:  Team member email representing the calendar ID (default will use primary)
 
     Returns:
         Confirmation string with the Google Calendar event link
     """
     try:
         service = _get_calendar_service()
+        target_calendar_id = calendar_email.strip() if calendar_email and calendar_email.strip() else CALENDAR_ID
         day = datetime.strptime(date, "%Y-%m-%d").date()
         event = _build_deep_work_event(
             task_title, day, start_hour, duration_hours, description
         )
 
+        # Cleanup logic: Look for existing event with the same title around the time window
+        base = datetime(day.year, day.month, day.day, tzinfo=IST)
+        day_start = (base - timedelta(days=14)).isoformat()
+        day_end = (base + timedelta(days=14)).isoformat()
+        
+        existing = service.events().list(
+            calendarId=target_calendar_id,
+            timeMin=day_start,
+            timeMax=day_end,
+            q=f"🔒 Deep Work: {task_title}",
+            singleEvents=True
+        ).execute()
+
+        for ev in existing.get("items", []):
+            if ev.get("summary") == event["summary"]:
+                # Update existing event instead of creating
+                updated = service.events().update(
+                    calendarId=target_calendar_id, 
+                    eventId=ev["id"], 
+                    body=event
+                ).execute()
+                raw_link = updated.get("htmlLink") or "no-link"
+                link = raw_link.strip() if isinstance(raw_link, str) else str(raw_link)
+                return (
+                    f"🔄 Calendar block updated (avoided duplicate): '🔒 Deep Work: {task_title}' | "
+                    f"Date: {date} {start_hour}:00–{start_hour + duration_hours}:00 IST | Link: {link}"
+                )
+
         created = service.events().insert(
-            calendarId=CALENDAR_ID, body=event
+            calendarId=target_calendar_id, body=event
         ).execute()
 
         raw_link = created.get("htmlLink") or "no-link"
@@ -207,21 +238,23 @@ def create_calendar_block(
         return f"❌ Calendar error: {str(e)}"
 
 
-def get_free_slots(date: str, work_start: int = 9, work_end: int = 20) -> str:
+def get_free_slots(date: str, work_start: int = 9, work_end: int = 20, calendar_email: str = "") -> str:
     """
     Finds 2-hour free slots on a given day by reading existing calendar events.
     Use this before scheduling to avoid conflicts.
 
     Args:
-        date:        ISO date string like '2026-05-10'
-        work_start:  Start of work window in 24h (default 9 AM)
-        work_end:    End of work window in 24h (default 8 PM)
+        date:           ISO date string like '2026-05-10'
+        work_start:     Start of work window in 24h (default 9 AM)
+        work_end:       End of work window in 24h (default 8 PM)
+        calendar_email: Team member email representing the calendar ID (default will use primary)
 
     Returns:
         A formatted string listing available 2-hour slots
     """
     try:
         service = _get_calendar_service()
+        target_calendar_id = calendar_email.strip() if calendar_email and calendar_email.strip() else CALENDAR_ID
         base = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=IST)
         day_start = base.replace(
             hour=work_start, minute=0, second=0, microsecond=0
@@ -231,7 +264,7 @@ def get_free_slots(date: str, work_start: int = 9, work_end: int = 20) -> str:
         )
 
         events_result = service.events().list(
-            calendarId=CALENDAR_ID,
+            calendarId=target_calendar_id,
             timeMin=day_start.isoformat(),
             timeMax=day_end.isoformat(),
             singleEvents=True,
@@ -265,9 +298,11 @@ def get_free_slots(date: str, work_start: int = 9, work_end: int = 20) -> str:
             free_slots.append((cursor, day_end))
 
         if not free_slots:
-            return f"📅 No 2-hour free slots found on {date}."
+            owner = calendar_email.strip() if calendar_email and calendar_email.strip() else "primary"
+            return f"📅 No 2-hour free slots found on {date} for {owner}."
 
-        output = f"📅 FREE SLOTS on {date}:\n"
+        owner = calendar_email.strip() if calendar_email and calendar_email.strip() else "primary"
+        output = f"📅 FREE SLOTS on {date} for {owner}:\n"
         for s, e in free_slots:
             output += f"  • {s.strftime('%H:%M')} – {e.strftime('%H:%M')} IST\n"
 
@@ -275,6 +310,33 @@ def get_free_slots(date: str, work_start: int = 9, work_end: int = 20) -> str:
 
     except Exception as e:
         return f"❌ Calendar read error: {str(e)}"
+
+
+def get_team_free_slots(date: str, team_emails: str, work_start: int = 9, work_end: int = 20) -> str:
+    """
+    Checks free/busy status for every team member on a given date.
+    Returns each member's available 2-hour slots so you can pick a conflict-free time.
+
+    Args:
+        date:         ISO date string like '2026-05-10'
+        team_emails:  Comma-separated list of team member emails, e.g. 'alice@corp.com,bob@corp.com'
+        work_start:   Start of work window in 24h (default 9 AM)
+        work_end:     End of work window in 24h (default 8 PM)
+
+    Returns:
+        A formatted string showing free slots per team member.
+    """
+    emails = [e.strip() for e in (team_emails or "").split(",") if e.strip()]
+    if not emails:
+        return "❌ No team emails provided. Pass a comma-separated list."
+
+    results: list[str] = [f"📅 TEAM AVAILABILITY on {date}:"]
+    results.append("=" * 50)
+    for email in emails:
+        member_result = get_free_slots(date, work_start, work_end, calendar_email=email)
+        results.append(member_result)
+    results.append("=" * 50)
+    return "\n".join(results)
 
 
 # ── Quick test ──────────────────────────────────────────────────────────────

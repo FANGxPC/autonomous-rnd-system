@@ -63,6 +63,61 @@
     terminalLog.scrollTop = terminalLog.scrollHeight;
   }
 
+  // --- Team Configuration ---
+  const teamToggle = document.getElementById("team-toggle");
+  const teamConfigBody = document.getElementById("team-config-body");
+  const numTeammatesInput = document.getElementById("num-teammates");
+  const teamMembersContainer = document.getElementById("team-members-container");
+  const generateRowsBtn = document.getElementById("generate-member-rows-btn");
+
+  if (teamToggle && teamConfigBody) {
+    teamToggle.addEventListener("change", () => {
+      teamConfigBody.classList.toggle("hidden", !teamToggle.checked);
+    });
+  }
+
+  function generateMemberRows() {
+    if (!teamMembersContainer || !numTeammatesInput) return;
+    const count = Math.min(Math.max(parseInt(numTeammatesInput.value) || 1, 1), 10);
+    numTeammatesInput.value = count;
+    teamMembersContainer.innerHTML = "";
+
+    for (let i = 0; i < count; i++) {
+      const row = document.createElement("div");
+      row.className = "member-row";
+      row.innerHTML = `
+        <span class="member-index">#${i + 1}</span>
+        <input type="text" class="form-input member-name" placeholder="Name" />
+        <input type="text" class="form-input member-role" placeholder="Role (e.g. Backend)" />
+        <input type="email" class="form-input member-email" placeholder="Email (for calendar)" style="grid-column: 1 / -1;" />
+      `;
+      teamMembersContainer.appendChild(row);
+    }
+  }
+
+  if (generateRowsBtn) {
+    generateRowsBtn.addEventListener("click", generateMemberRows);
+  }
+
+  function collectTeamMembers() {
+    if (!teamToggle || !teamToggle.checked) return { num_teammates: 0, team_members: null };
+    const rows = teamMembersContainer ? teamMembersContainer.querySelectorAll(".member-row") : [];
+    if (rows.length === 0) {
+      return { num_teammates: parseInt(numTeammatesInput?.value) || 0, team_members: null };
+    }
+    const members = [];
+    rows.forEach(row => {
+      const name = row.querySelector(".member-name")?.value?.trim() || "";
+      const role = row.querySelector(".member-role")?.value?.trim() || "";
+      const email = row.querySelector(".member-email")?.value?.trim() || "";
+      if (name) members.push({ name, role, email });
+    });
+    return {
+      num_teammates: members.length,
+      team_members: members.length > 0 ? members : null
+    };
+  }
+
   function drawWorkflowLinks() {
     const svg = document.querySelector(".workflow-svg");
     if (!svg) return;
@@ -168,11 +223,20 @@
       addLog(`Initiating R&D sequence: ${project_key}`, "sys");
       animateWorkflow();
 
+      const teamData = collectTeamMembers();
+      if (teamData.team_members && teamData.team_members.length > 0) {
+        addLog(`Team mode: ${teamData.team_members.length} member(s) configured.`, "sys");
+      }
+
       try {
+        const payload = { prompt, deadline, project_key };
+        if (teamData.num_teammates > 0) payload.num_teammates = teamData.num_teammates;
+        if (teamData.team_members) payload.team_members = teamData.team_members;
+
         const res = await fetch(`${API_BASE}/trigger-pipeline`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt, deadline, project_key }),
+          body: JSON.stringify(payload),
         });
         const body = await res.json();
         showResultsView(body);
@@ -204,6 +268,20 @@
     });
   }
 
+  // --- Close / New Run button ---
+  if (newRunBtn) {
+    newRunBtn.addEventListener("click", () => {
+      if (resultsPanel) resultsPanel.classList.add("hidden");
+      // Reset sections
+      if (notionSection) notionSection.classList.add("hidden");
+      if (calendarSection) calendarSection.classList.add("hidden");
+      if (notionLinkCards) notionLinkCards.innerHTML = "";
+      if (calendarLinkCards) calendarLinkCards.innerHTML = "";
+      if (summaryText) summaryText.textContent = "";
+      if (executionStatus) executionStatus.textContent = "IDLE";
+    });
+  }
+
   function showResultsView(body) {
     if (resultsPanel) resultsPanel.classList.remove("hidden");
     if (resultsBanner) {
@@ -212,10 +290,53 @@
     }
     if (summaryText) summaryText.textContent = body.outcome?.summary || body.error || "";
     
-    const notionCards = document.getElementById("notion-link-cards");
-    if (notionCards && body.notion?.run_page_url) {
-      notionCards.innerHTML = `<a href="${body.notion.run_page_url}" target="_blank" class="link-card"><h3 class="link-card-title">Notion Workspace</h3></a>`;
-      document.getElementById("notion-section").classList.remove("hidden");
+    // --- Notion Links ---
+    if (notionLinkCards) {
+      notionLinkCards.innerHTML = "";
+      const notionLinks = [];
+
+      if (body.notion?.hub_page_url) {
+        notionLinks.push({ title: "📁 Runs Hub", url: body.notion.hub_page_url });
+      }
+      if (body.notion?.run_page_url) {
+        notionLinks.push({ title: "📋 Run Workspace", url: body.notion.run_page_url });
+      }
+      if (body.notion?.kanban_database_id) {
+        notionLinks.push({
+          title: "🗂️ Kanban Board",
+          url: `https://www.notion.so/${body.notion.kanban_database_id.replace(/-/g, "")}`
+        });
+      }
+
+      if (notionLinks.length > 0) {
+        notionLinks.forEach(link => {
+          const card = document.createElement("a");
+          card.href = link.url;
+          card.target = "_blank";
+          card.className = "link-card";
+          card.innerHTML = `<h3 class="link-card-title">${escapeHtml(link.title)}</h3><span class="link-card-sub">${escapeHtml(link.url)}</span>`;
+          notionLinkCards.appendChild(card);
+        });
+        if (notionSection) notionSection.classList.remove("hidden");
+      }
+    }
+
+    // --- Calendar Links ---
+    if (calendarLinkCards) {
+      calendarLinkCards.innerHTML = "";
+      const calLinks = body.calendar_event_links || [];
+      
+      if (calLinks.length > 0) {
+        calLinks.forEach((url, i) => {
+          const card = document.createElement("a");
+          card.href = url;
+          card.target = "_blank";
+          card.className = "link-card";
+          card.innerHTML = `<h3 class="link-card-title">📅 Calendar Event #${i + 1}</h3><span class="link-card-sub">${escapeHtml(url)}</span>`;
+          calendarLinkCards.appendChild(card);
+        });
+        if (calendarSection) calendarSection.classList.remove("hidden");
+      }
     }
   }
 
