@@ -4,10 +4,10 @@ from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
 
+# Load environment variables
 load_dotenv()
 
 from agents import tech_lead_agent
-
 from project_store import (
     list_projects,
     get_project,
@@ -16,7 +16,6 @@ from project_store import (
 
 
 async def main():
-
     session_service = InMemorySessionService()
 
     runner = Runner(
@@ -33,19 +32,13 @@ async def main():
     # -------------------------
     # SHOW PROJECTS
     # -------------------------
-
     projects = list_projects()
-
     print("\nAvailable Projects:")
 
     if not projects:
-
         print("No projects found.")
-
     else:
-
         for i, p in enumerate(projects, start=1):
-
             print(f"{i} - {p}")
 
     print("\nSelect mode:")
@@ -57,29 +50,18 @@ async def main():
     # -------------------------
     # NEW PROJECT
     # -------------------------
-
     if choice == "1":
-
         prompt = input("\nEnter new project description: ")
-
         project_key = prompt.lower().replace(" ", "_")
-
         mode = "new_project"
-
     else:
-
         if not projects:
-
             print("No projects to refine.")
-
             return
 
         index = int(input("\nSelect project number: ")) - 1
-
         project_key = projects[index]
-
         prompt = input("\nEnter refinement request: ")
-
         mode = "refinement"
 
     print("\nMODE:", mode)
@@ -88,17 +70,13 @@ async def main():
     # -------------------------
     # LOAD EXISTING PROJECT
     # -------------------------
-
     existing_project = get_project(project_key)
-
     if existing_project:
-
         print("\nLoaded existing project.")
 
     # -------------------------
     # SEND TO AGENT
     # -------------------------
-
     content = types.Content(
         role="user",
         parts=[
@@ -124,41 +102,63 @@ User Request:
 
     response_text = ""
 
-    async for event in runner.run_async(
+    # ----------------------------
+    # STEP 1: FORCE RESEARCH FIRST
+    # ----------------------------
+    print("\n=== FORCING RESEARCH STEP ===\n")
 
+    research_content = types.Content(
+        role="user",
+        parts=[types.Part(text=f"Research this project deeply and provide sources: {prompt}")]
+    )
+
+    async for event in runner.run_async(
+        user_id="test_user",
+        session_id=session.id,
+        new_message=research_content,
+    ):
+        if event.content and event.content.parts:
+            for part in event.content.parts:
+                if part.text:
+                    print(f"[research_agent]: {part.text}")
+
+    print("\n=== RESEARCH COMPLETE ===\n")
+
+    # ----------------------------
+    # STEP 2: RUN MAIN AGENT
+    # ----------------------------
+    content = types.Content(
+        role="user",
+        parts=[types.Part(text=prompt)]
+    )
+
+    async for event in runner.run_async(
         user_id="test_user",
         session_id=session.id,
         new_message=content,
-
     ):
-
         author = event.author or "system"
 
         if event.content and event.content.parts:
-
             for part in event.content.parts:
-
                 if part.text:
-
                     print(f"[{author}]: {part.text}")
-
                     response_text += part.text
+                elif part.function_call:
+                    print(f"[{author}] calling tool: {part.function_call.name}")
+                elif part.function_response:
+                    print(f"[{author}] tool returned: {part.function_response.response}")
 
     # -------------------------
     # SAVE PROJECT
     # -------------------------
-
     project_data = {
-
         "last_response": response_text
-
     }
 
     save_project(project_key, project_data)
-
     print("\nProject saved.")
 
 
 if __name__ == "__main__":
-
     asyncio.run(main())
