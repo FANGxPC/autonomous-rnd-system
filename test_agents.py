@@ -103,34 +103,9 @@ User Request:
     response_text = ""
 
     # ----------------------------
-    # STEP 1: FORCE RESEARCH FIRST
+    # STEP: RUN FULL AGENT PIPELINE
     # ----------------------------
-    print("\n=== FORCING RESEARCH STEP ===\n")
-
-    research_content = types.Content(
-        role="user",
-        parts=[types.Part(text=f"Research this project deeply and provide sources: {prompt}")]
-    )
-
-    async for event in runner.run_async(
-        user_id="test_user",
-        session_id=session.id,
-        new_message=research_content,
-    ):
-        if event.content and event.content.parts:
-            for part in event.content.parts:
-                if part.text:
-                    print(f"[research_agent]: {part.text}")
-
-    print("\n=== RESEARCH COMPLETE ===\n")
-
-    # ----------------------------
-    # STEP 2: RUN MAIN AGENT
-    # ----------------------------
-    content = types.Content(
-        role="user",
-        parts=[types.Part(text=prompt)]
-    )
+    print("\n=== RUNNING FULL AGENT PIPELINE ===\n")
 
     async for event in runner.run_async(
         user_id="test_user",

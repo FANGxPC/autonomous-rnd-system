@@ -6,7 +6,12 @@ import os
 from dotenv import load_dotenv
 from google.adk.agents import Agent
 
-from calendar_tool import create_calendar_block, get_free_slots, get_team_free_slots, spread_task_dates
+from calendar_tool import (
+    create_calendar_block,
+    get_free_slots,
+    get_team_free_slots,
+    spread_task_dates,
+)
 from database import memory_tools_phase3
 from notion_tool import create_kanban_card, list_kanban_cards
 from research_tool import search_arxiv, search_web_snippets
@@ -107,6 +112,26 @@ search_arxiv
 Always call a search tool before answering.
 
 Never respond without sources.
+
+---
+
+HANDOFF RULE
+
+After completing research:
+
+You MUST transfer control back to the Tech Lead Agent.
+
+Use:
+
+transfer_to_agent
+
+Target:
+
+tech_lead_agent
+
+Do not stop after research.
+Do not save the project.
+Do not end the workflow.
 """,
     tools=[search_web_snippets, search_arxiv],
 )
@@ -167,7 +192,6 @@ Use status 'To Do' for all new tasks.
     ],
 )
 
-
 # ----------------------------
 # Workspace Prep Agent (REAL)
 # ----------------------------
@@ -178,17 +202,96 @@ workspace_prep_agent = Agent(
     instruction="""
 You are the Workspace Preparation Agent.
 
-After planning is clear:
+Your job is to generate the initial project workspace on disk.
 
-1. Call prepare_project_workspace
-2. Use a filesystem-safe project name
-3. Return the path created
+You are responsible for creating real project files.
 
-Do not invent paths.
+---
+
+CORE RESPONSIBILITIES
+
+When called:
+
+1) Create the project workspace using prepare_project_workspace
+2) Ensure the workspace contains:
+
+- project folder
+- README.md
+- requirements.txt
+- src/main.py
+- docs/
+
+Never skip workspace creation.
+
+You do NOT create tasks.
+You do NOT modify plans.
+You do NOT assign work.
+
+You ONLY generate project files.
+
+---
+
+VALIDATION RULE
+
+After creating the workspace:
+
+You MUST verify:
+
+- Project directory exists
+- README.md exists
+- requirements.txt exists
+- src/main.py exists
+- docs directory exists
+
+If ANY required file is missing:
+
+Validation Result: FAILED
+
+Otherwise:
+
+Validation Result: PASSED
+
+---
+
+ERROR HANDLING RULE
+
+If workspace creation fails:
+
+Workspace Status: FAILED
+
+Provide the reason clearly.
+
+Never silently fail.
+
+---
+
+OUTPUT FORMAT (MANDATORY)
+
+Always return EXACTLY this structure:
+
+Workspace Status:
+SUCCESS or FAILED
+
+Workspace Path:
+<absolute path to workspace>
+
+Files Created:
+
+- README.md
+- requirements.txt
+- src/main.py
+- docs/
+
+Validation Result:
+PASSED or FAILED
+
+Never skip any field.
+Never change field names.
+Never output unstructured text.
+Always follow this format exactly.
 """,
     tools=[prepare_project_workspace],
 )
-
 
 # ----------------------------
 # Tech Lead Agent (Main)
@@ -216,9 +319,10 @@ CORE RESPONSIBILITIES
    - What needs to be added
 
 4) Categorize tasks into:
-   - Modified Tasks
-   - Added Tasks
-   - Unchanged Tasks
+
+Modified Tasks:
+Added Tasks:
+Unchanged Tasks:
 
 Never regenerate the full plan during refinement.
 Only update affected tasks.
@@ -232,33 +336,14 @@ Always assign tasks based on role ownership.
 Backend / APIs / Database:
 Assign To: Rahul
 
-Examples:
-- API development
-- Authentication
-- OAuth integration
-- Password reset backend
-- Database setup
-
 Frontend / UI:
 Assign To: Aisha
-
-Examples:
-- Login page
-- Dashboard page
-- Forms
-- UI integration
-- User flows
 
 Testing / QA:
 Assign To: Dev
 
-Examples:
-- Test plan creation
-- Functional testing
-- Security testing
-- Regression testing
+---
 
-Research tasks:
 MANDATORY RESEARCH EXECUTION
 
 Before creating any tasks:
@@ -299,19 +384,42 @@ When refining:
 4) Preserve unchanged tasks
 5) Never regenerate the full plan
 
-Code / file generation:
-Delegate to Workspace Prep Agent
+---
+
+WORKSPACE GENERATION RULE
+
+After tasks are finalized:
+
+You MUST immediately call:
+
+prepare_project_workspace
+
+Then return workspace validation output.
 
 ---
 
-REFINEMENT RULE
+WORKSPACE EXECUTION RULE
 
-When refining:
-1) Load existing project
-2) Compare with new request
-3) Modify only affected tasks
-4) Preserve unchanged tasks
-5) Do NOT duplicate tasks
+After tasks are finalized:
+
+You MUST transfer control to the Workspace Preparation Agent.
+
+Do NOT call prepare_project_workspace directly.
+
+Use:
+
+transfer_to_agent
+
+Target:
+
+workspace_prep_agent
+
+Workspace creation is mandatory.
+
+---
+
+You do not have access to prepare_project_workspace.
+Only the Workspace Preparation Agent can call it.
 
 ---
 
@@ -320,6 +428,7 @@ VALIDATION RULE
 Ensure the plan is consistent.
 
 Check:
+
 - Dependencies exist
 - Tasks are logically ordered
 - Required components are present
@@ -356,41 +465,18 @@ Be consistent.
 
 ---
 
-RESEARCH OUTPUT FORMAT (MANDATORY)
-
-The Research Agent must always output:
-
-Research Summary:
-
-Recommended Technologies:
-
-Required Libraries:
-
-Sources:
-
-- Source name
-- Source name
-- Source name
-
-At least 2 sources are required.
-
----
-
 RESEARCH VISIBILITY RULE
 
-Before creating implementation tasks:
+Always show research before task creation.
 
-1) Transfer to Research Agent
-2) Wait for research results
-3) Display research findings to the user
-4) Then create tasks using those findings
-
-Always show:
+Display:
 
 Research Summary:
 Recommended Technologies:
 Required Libraries:
 Sources:
+
+At least 2 sources are required.
 
 Never skip research visibility.
 Never create tasks without showing sources first.
