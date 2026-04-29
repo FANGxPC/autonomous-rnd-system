@@ -18,7 +18,7 @@ load_dotenv()
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.requests import Request
 from starlette.responses import RedirectResponse
@@ -31,7 +31,7 @@ from rich.panel import Panel
 from rich.rule import Rule
 
 from agents import ADK_LITE, ADK_MODEL, tech_lead_agent
-from database import log_run_history
+from database import log_run_history, get_run_history
 from mcp_bridge import mcp_http_asgi, mcp_http_lifespan
 from notion_tool import begin_notion_run_workspace, end_notion_run_workspace
 
@@ -160,6 +160,46 @@ def _extract_outcome(events: list[Any]) -> str:
         if t:
             return t
     return ""
+
+
+def _trim_to_summary(text: str) -> str:
+    """Return only the per-member summary block from the model output.
+
+    Strategy:
+    1. If the model used the <!-- SUMMARY_START / SUMMARY_END --> sentinels,
+       extract that slice and strip the tags.
+    2. Otherwise, deduplicate repeated paragraphs for the same member
+       (the model sometimes emits the same heading twice).
+    """
+    if not text:
+        return text
+
+    # --- Strategy 1: sentinel tags ---
+    start_tag = "<!-- SUMMARY_START -->"
+    end_tag = "<!-- SUMMARY_END -->"
+    si = text.find(start_tag)
+    ei = text.find(end_tag)
+    if si != -1:
+        inner = text[si + len(start_tag): ei if ei != -1 else None].strip()
+        return inner
+
+    # --- Strategy 2: deduplicate paragraphs by bold header (** Name **) ---
+    # Split on double-newline boundaries and keep only the first occurrence
+    # of each bold header pattern.
+    header_re = re.compile(r"^\s*\*\*.+\*\*", re.MULTILINE)
+    paragraphs = re.split(r"\n{2,}", text.strip())
+    seen_headers: set[str] = set()
+    kept: list[str] = []
+    for para in paragraphs:
+        m = header_re.match(para)
+        if m:
+            key = m.group(0).strip().lower()
+            if key in seen_headers:
+                continue  # duplicate paragraph for same member — drop it
+            seen_headers.add(key)
+        kept.append(para)
+    return "\n\n".join(kept)
+
 
 
 def _pipeline_created_notion_cards(events: list[Any]) -> bool:
@@ -390,6 +430,22 @@ async def trigger_pipeline(request: TriggerRequest):
             f"[dim]Notion run workspace: {notion_run['run_page_url']}[/dim]"
         )
 
+    # ── Workspace: generate zip directly (not relying on agent) ──
+    workspace_download_url: str | None = None
+    try:
+        from workspace_tool import prepare_project_workspace, global_workspace_urls, _slug
+        ws_result = prepare_project_workspace(
+            project_name=request.project_key,
+            short_summary=request.prompt[:200],
+            num_teammates=request.num_teammates,
+            team_members=team_dict,
+        )
+        console.print(f"[dim]Workspace: {ws_result}[/dim]")
+        ws_slug = _slug(request.project_key)
+        workspace_download_url = global_workspace_urls.get(ws_slug)
+    except Exception as ws_err:
+        console.print(f"[yellow]Workspace generation skipped: {ws_err}[/yellow]")
+
     try:
         for attempt in range(max_attempts):
             runner: InMemoryRunner | None = None
@@ -439,16 +495,13 @@ async def trigger_pipeline(request: TriggerRequest):
                         events.append(event)
                         _log_event(event)
 
-                outcome_text = _extract_outcome(events)
+                outcome_text = _trim_to_summary(_extract_outcome(events))
                 finished = datetime.now().isoformat()
 
                 console.print(Rule("[bold green]PIPELINE DONE[/bold green]", style="green"))
 
+                # log call moved below so it captures notion/calendar/workspace links
                 summary_for_log = outcome_text[:500] if outcome_text else "completed (no text outcome)"
-                try:
-                    log_run_history(summary_for_log, request.prompt)
-                except Exception:
-                    pass
 
                 cards_ok = _pipeline_created_notion_cards(events)
                 meta_out = {
@@ -498,6 +551,31 @@ async def trigger_pipeline(request: TriggerRequest):
                 _cal = _extract_calendar_event_links(events, outcome_text)
                 if _cal:
                     body["calendar_event_links"] = _cal
+                    
+                if workspace_download_url:
+                    body["workspace_download_url"] = workspace_download_url
+
+                # Persist to Firestore with full snapshot for history panel
+                result_snapshot = {
+                    "status": body.get("status"),
+                    "outcome": {"summary": outcome_text},
+                }
+                if "notion" in body:
+                    result_snapshot["notion"] = body["notion"]
+                if _cal:
+                    result_snapshot["calendar_event_links"] = _cal
+                if workspace_download_url:
+                    result_snapshot["workspace_download_url"] = workspace_download_url
+                try:
+                    log_run_history(
+                        summary_for_log,
+                        request.prompt,
+                        project_key=request.project_key,
+                        result_snapshot=result_snapshot,
+                    )
+                except Exception:
+                    pass
+
                 await runner.close()
                 return JSONResponse(content=body)
 
@@ -552,6 +630,35 @@ async def trigger_pipeline(request: TriggerRequest):
     finally:
         end_notion_run_workspace(notion_reset_token)
 
+
+@app.get("/api/run-history")
+async def api_run_history(limit: int = 30):
+    """Return the last N pipeline runs from Firestore for the Past Runs sidebar panel."""
+    try:
+        runs = get_run_history(limit=min(limit, 50))
+        return JSONResponse(content={"runs": runs})
+    except Exception as e:
+        return JSONResponse(content={"runs": [], "error": str(e)})
+
+
+@app.get("/api/download-workspace/{filename}")
+async def download_workspace(filename: str):
+    """Serve the zipped workspace directly from the ephemeral environment."""
+    root_env = os.getenv("WORKSPACE_OUTPUT_DIR", "generated_workspaces").strip()
+    root = Path(root_env).resolve()
+    
+    # Simple strict validation to prevent path traversal
+    safe_name = re.sub(r"[^\w\.\-]", "", filename)
+    file_path = root / safe_name
+    
+    if not file_path.is_file() or not str(file_path).endswith(".zip"):
+        return JSONResponse({"error": "File not found"}, status_code=404)
+        
+    return FileResponse(
+        path=file_path, 
+        filename=filename, 
+        media_type="application/zip"
+    )
 
 _FRONTEND_DIR = Path(__file__).resolve().parent / "frontend"
 # Starlette Mount matches /mcp/{path}; bare /mcp must redirect to /mcp/

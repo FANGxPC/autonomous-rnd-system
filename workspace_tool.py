@@ -8,10 +8,8 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
-
-from dotenv import load_dotenv
-
-load_dotenv()
+# Global state dictionary safely passes the generated URL back to the main request thread across asyncio task boundaries
+global_workspace_urls: dict[str, str] = {}
 
 
 def _slug(name: str) -> str:
@@ -94,7 +92,35 @@ def prepare_project_workspace(project_name: str, short_summary: str = "", num_te
     except OSError as e:
         return f"❌ Workspace: could not write README: {e}"
 
-    confirm_msg = f"✅ Workspace ready at `{base}`\n   Created: README.md, docs/, src/"
+    try:
+        import shutil
+        zip_path = shutil.make_archive(str(base), 'zip', str(base))
+    except Exception as e:
+        return f"❌ Workspace: generated folder but could not zip it: {e}"
+
+    download_link = f"/api/download-workspace/{slug}.zip"
+    
+    # ── Upload to Google Cloud Storage (if configured) ──
+    gcs_bucket = os.getenv("WORKSPACE_GCS_BUCKET", "").strip()
+    if gcs_bucket:
+        try:
+            from google.cloud import storage
+            from datetime import timedelta
+            
+            client = storage.Client()
+            bucket = client.bucket(gcs_bucket)
+            blob = bucket.blob(f"generated_workspaces/{slug}.zip")
+            blob.upload_from_filename(f"{base}.zip")
+            
+            # Generate a Signed URL valid for 7 days
+            download_link = blob.generate_signed_url(version="v4", expiration=timedelta(days=7), method="GET")
+        except Exception as e:
+            return f"❌ Workspace: Zipped locally but GCS upload failed: {e}"
+
+    # Store in global state so main.py can grab it flawlessly across thread boundaries
+    global_workspace_urls[slug] = download_link
+
+    confirm_msg = f"✅ Workspace zipped and ready for download: {download_link}\n   Contents: README.md, docs/, src/"
     if members_to_create:
         confirm_msg += f", and {len(members_to_create)} team member subdirectories."
     return confirm_msg

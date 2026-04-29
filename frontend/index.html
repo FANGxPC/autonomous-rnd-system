@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>R&D Autonomous System | Control</title>
-  <link rel="stylesheet" href="styles.css?v=5" />
+  <link rel="stylesheet" href="styles.css?v=6" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
@@ -32,6 +32,17 @@
           <span class="nav-label">Workspace</span>
         </button>
       </nav>
+
+      <!-- Past Runs History -->
+      <div class="past-runs-section">
+        <button class="past-runs-toggle" id="past-runs-toggle" aria-expanded="false">
+          <span class="past-runs-label">📂 Past Runs</span>
+          <span class="past-runs-chevron" id="past-runs-chevron">›</span>
+        </button>
+        <div class="past-runs-list hidden" id="past-runs-list">
+          <div class="past-runs-empty" id="past-runs-empty">No completed runs yet.</div>
+        </div>
+      </div>
 
       <div class="sidebar-footer">
         <div class="connection-status">
@@ -224,7 +235,10 @@
           <!-- Results Overlay -->
           <div id="results-panel" class="modal-overlay hidden">
             <div class="glass-panel modal-card">
-              <button class="modal-close" id="new-run-btn">&times;</button>
+              <div class="modal-top-bar">
+                <span id="modal-project-label" class="modal-project-label"></span>
+                <button class="modal-close" id="new-run-btn" aria-label="Close results">&times;</button>
+              </div>
               <div id="results-banner" class="results-banner"></div>
               
               <div class="modal-scroll-area">
@@ -328,6 +342,6 @@ Once the R&D sequence completes, generated code and documentation will appear he
   </div>
 
   <script>window.API_BASE = "";</script>
-  <script src="app.js?v=4"></script>
+  <script src="app.js?v=7"></script>
 </body>
 </html>

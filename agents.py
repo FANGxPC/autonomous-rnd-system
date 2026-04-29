@@ -82,7 +82,8 @@ When given a project and a **deadline** (plan end date) in the user message, you
      This appears under **Sources & references** at the bottom of the card. Use the SAME sources
      across tasks for this run when they all apply, or the subset relevant to each task.
 
-6. Return a summary listing every card and every calendar block with **its date and assigned member**.
+6. Return a SHORT summary (2-3 sentences): how many cards created, how many calendar blocks booked, date range used.
+   Do NOT include any raw Notion or Calendar URLs in your summary — the UI displays those separately.
 
 Always create each **calendar block** before its matching **Notion** card.
 Use status 'To Do' for all new tasks.
@@ -171,8 +172,11 @@ You MUST:
 - Do NOT recreate everything
 
 Workflow order:
-
-memory → research → scrum → workspace → summary
+1. memory (check previous project state)
+2. research (gather technical intel)
+3. scrum (distribute events and Notion cards)
+4. workspace (MUST transfer_to_workspace_prep_agent to scaffold files)
+5. summary (final response to user)
 
 OUTPUT FORMAT RULE (MANDATORY):
 
@@ -232,6 +236,27 @@ When the user selects refinement mode:
 
 Never generate a completely new plan from scratch during refinement.
 Always integrate changes into the existing workflow.
+
+FINAL SUMMARY RULE (MANDATORY):
+
+After ALL sub-agents have finished, output EXACTLY the following — nothing before, nothing after:
+
+<!-- SUMMARY_START -->
+**<Name> — <Role>**
+<5-6 line paragraph covering: overall responsibility, number of tasks assigned, date range of their calendar blocks, 1-2 key deliverables, and one critical risk or dependency.>
+
+**<Name> — <Role>**
+<5-6 line paragraph — same format>
+
+(repeat for every team member)
+<!-- SUMMARY_END -->
+
+RULES (non-negotiable):
+- Begin the ENTIRE response with <!-- SUMMARY_START --> — no preamble, no intro sentence.
+- End the ENTIRE response with <!-- SUMMARY_END -->.
+- Write EXACTLY ONE paragraph per member — never two paragraphs for the same person.
+- Each paragraph is 5-6 lines: no bullet lists, no task field labels (no "Task Title:", "Assigned To:", etc.).
+- Zero raw URLs anywhere in the output.
 """,
     tools=memory_tools_phase3,
     sub_agents=[

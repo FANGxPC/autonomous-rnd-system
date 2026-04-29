@@ -140,18 +140,66 @@ def log_agent_action(agent_name: str, action: str, details: str):
         pass
 
 
-def log_run_history(summary: str, prompt: str = ""):
-    """Optional: Log full pipeline runs (useful for Member 4)"""
+def log_run_history(
+    summary: str,
+    prompt: str = "",
+    project_key: str = "",
+    result_snapshot: dict | None = None,
+):
+    """Log full pipeline run to Firestore run_history collection."""
     try:
         timestamp = datetime.now().isoformat()
-        db.collection("run_history").document().set({
+        data: dict = {
             "timestamp": timestamp,
             "prompt": prompt,
-            "summary": summary
-        })
+            "summary": summary,
+            "project_key": project_key,
+        }
+        if result_snapshot:
+            data["result_snapshot"] = result_snapshot
+        db.collection("run_history").document().set(data)
         print(f"📊 Run history logged")
-    except:
-        pass
+    except Exception as e:
+        print(f"⚠️ log_run_history error: {e}")
+
+
+def get_run_history(limit: int = 30) -> list:
+    """Return the last `limit` pipeline runs from Firestore, newest first."""
+    try:
+        try:
+            from google.cloud.firestore_v1 import Query as FSQuery
+            docs = (
+                db.collection("run_history")
+                .order_by("timestamp", direction=FSQuery.DESCENDING)
+                .limit(limit)
+                .stream()
+            )
+        except Exception:
+            # Fallback: stream all and sort in Python (works for MockClient too)
+            all_docs = list(db.collection("run_history").stream())
+            all_docs.sort(
+                key=lambda d: (d.to_dict() or {}).get("timestamp") or "",
+                reverse=True,
+            )
+            docs = all_docs[:limit]
+
+        runs = []
+        for doc in docs:
+            data = doc.to_dict() or {}
+            snapshot = data.get("result_snapshot") or {
+                "status": "success",
+                "outcome": {"summary": data.get("summary", "")},
+            }
+            runs.append({
+                "id": doc.id,
+                "projectKey": data.get("project_key") or data.get("prompt", "")[:40],
+                "timestamp": data.get("timestamp", ""),
+                "body": snapshot,
+            })
+        return runs
+    except Exception as e:
+        print(f"⚠️ get_run_history error: {e}")
+        return []
 
 
 def run_test():
@@ -217,13 +265,14 @@ def log_agent_action_tool(
 
 
 def log_run_history_tool(
-    summary: str, 
-    prompt: str = ""
+    summary: str,
+    prompt: str = "",
+    project_key: str = "",
 ) -> str:
     """
     Log the full pipeline run (useful for Member 4 backend).
     """
-    log_run_history(summary, prompt)
+    log_run_history(summary, prompt, project_key=project_key)
     return "✅ Run history saved to Firestore"
 
 

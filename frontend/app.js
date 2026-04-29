@@ -16,6 +16,162 @@
   const activeProjectKeyInput = document.getElementById("active-project-key");
   const activeViewName = document.getElementById("active-view-name");
   const executionStatus = document.getElementById("execution-status");
+  const modalProjectLabel = document.getElementById("modal-project-label");
+  const pastRunsToggle = document.getElementById("past-runs-toggle");
+  const pastRunsChevron = document.getElementById("past-runs-chevron");
+  const pastRunsList = document.getElementById("past-runs-list");
+  const pastRunsEmpty = document.getElementById("past-runs-empty");
+
+  // ── localStorage run history ─────────────────────────────────
+  const LS_KEY = "rnd_run_history";
+
+  function loadRunHistory() {
+    try { return JSON.parse(localStorage.getItem(LS_KEY) || "[]"); }
+    catch { return []; }
+  }
+
+  function saveRunToHistory(projectKey, body) {
+    const runs = loadRunHistory();
+    // Remove old entry for same project+timestamp collision; keep max 30 runs
+    const entry = {
+      id: `${projectKey}_${Date.now()}`,
+      projectKey,
+      timestamp: new Date().toISOString(),
+      body: JSON.parse(JSON.stringify(body)) // deep clone
+    };
+    runs.unshift(entry);
+    if (runs.length > 30) runs.length = 30;
+    try { localStorage.setItem(LS_KEY, JSON.stringify(runs)); } catch { }
+    return entry;
+  }
+
+
+  // ── Past Runs panel ─────────────────────────────────────────────
+  function _renderRunEntries(runs, sourceLabel) {
+    Array.from(pastRunsList.querySelectorAll(".past-run-item, .past-runs-source")).forEach(el => el.remove());
+    if (runs.length === 0) {
+      if (pastRunsEmpty) pastRunsEmpty.classList.remove("hidden");
+      return;
+    }
+    if (pastRunsEmpty) pastRunsEmpty.classList.add("hidden");
+
+    if (sourceLabel) {
+      const pill = document.createElement("div");
+      pill.className = "past-runs-source";
+      pill.textContent = sourceLabel;
+      pastRunsList.appendChild(pill);
+    }
+
+    runs.forEach(entry => {
+      const btn = document.createElement("button");
+      btn.className = "past-run-item";
+      const ts = new Date(entry.timestamp);
+      const label = entry.projectKey || "run";
+      const timeStr = ts.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false });
+      const dateStr = ts.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
+      const status = entry.body?.status === "success" ? "✅" : "❌";
+      btn.innerHTML = `
+        <span class="run-item-icon">${status}</span>
+        <span class="run-item-info">
+          <span class="run-item-key">${escapeHtml(label)}</span>
+          <span class="run-item-time">${dateStr} · ${timeStr}</span>
+        </span>
+      `;
+      btn.addEventListener("click", () => {
+        showResultsView(entry.body, entry.projectKey);
+      });
+      pastRunsList.appendChild(btn);
+    });
+  }
+
+  async function renderPastRuns() {
+    if (!pastRunsList) return;
+
+    // 1️⃣ Instantly show localStorage entries while Firebase loads
+    const local = loadRunHistory();
+    _renderRunEntries(local, local.length ? "⚡ cached" : null);
+
+    // 2️⃣ Loading indicator
+    const loader = document.createElement("div");
+    loader.className = "past-runs-loading";
+    loader.textContent = "Syncing with Firebase…";
+    pastRunsList.appendChild(loader);
+
+    try {
+      const res = await fetch(`${API_BASE}/api/run-history?limit=30`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      loader.remove();
+
+      const fbRuns = (data.runs || []).map(r => ({
+        id: r.id,
+        projectKey: r.projectKey || "run",
+        timestamp: r.timestamp,
+        body: r.body,
+      }));
+
+      // ── Smart merge ────────────────────────────────────────────
+      // localStorage has full body (notion + calendar + workspace) for
+      // runs done in this browser. Firebase has the authoritative list
+      // but old entries only have {status, outcome:{summary}}.
+      // Rule: for each Firebase entry, if a localStorage entry for the
+      // SAME project key has richer data, use the localStorage body.
+
+      function _isRich(body) {
+        return !!(body?.notion || body?.calendar_event_links?.length || body?.workspace_download_url);
+      }
+
+      // Build a map: projectKey → richest localStorage entry
+      const localRich = {};
+      local.forEach(e => {
+        if (_isRich(e.body)) {
+          // Keep the most recent rich entry per project key
+          if (!localRich[e.projectKey] ||
+            new Date(e.timestamp) > new Date(localRich[e.projectKey].timestamp)) {
+            localRich[e.projectKey] = e;
+          }
+        }
+      });
+
+      // Enrich Firebase entries that are missing notion/calendar data
+      const enriched = fbRuns.map(fbEntry => {
+        if (!_isRich(fbEntry.body) && localRich[fbEntry.projectKey]) {
+          return { ...fbEntry, body: localRich[fbEntry.projectKey].body };
+        }
+        return fbEntry;
+      });
+
+      // Add any local-only entries (project keys not in Firebase at all)
+      const fbKeys = new Set(fbRuns.map(r => r.projectKey));
+      local.forEach(e => {
+        if (!fbKeys.has(e.projectKey)) enriched.push(e);
+      });
+
+      // Sort newest first
+      enriched.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+      if (enriched.length > 0) {
+        _renderRunEntries(enriched, "🔥 Firebase");
+      } else {
+        _renderRunEntries(local, local.length ? "⚡ cached (offline)" : null);
+      }
+    } catch (err) {
+      loader.remove();
+      addLog(`Past Runs: Firebase fetch failed (${err.message}). Showing local cache.`, "sys");
+    }
+  }
+
+  // Toggle open/close
+  if (pastRunsToggle) {
+    pastRunsToggle.addEventListener("click", () => {
+      const isOpen = !pastRunsList.classList.contains("hidden");
+      pastRunsList.classList.toggle("hidden", isOpen);
+      pastRunsToggle.setAttribute("aria-expanded", String(!isOpen));
+      if (pastRunsChevron) pastRunsChevron.style.transform = isOpen ? "" : "rotate(90deg)";
+      if (!isOpen) renderPastRuns();
+    });
+  }
+
 
   // Workflow Nodes
   const nodes = {
@@ -29,8 +185,8 @@
 
   const API_BASE =
     typeof window !== "undefined" &&
-    window.API_BASE !== undefined &&
-    window.API_BASE !== null
+      window.API_BASE !== undefined &&
+      window.API_BASE !== null
       ? String(window.API_BASE).trim()
       : "";
 
@@ -161,13 +317,13 @@
       const node = nodes[nodeId];
       if (node) node.classList.add("active");
       if (linkId) document.getElementById(linkId)?.classList.add("active");
-      
+
       if (logMsg) {
         addLog(logMsg, logAuthor);
       }
-      
+
       await new Promise(r => setTimeout(r, duration));
-      
+
       if (node) {
         node.classList.remove("active");
         node.classList.add("completed");
@@ -219,7 +375,7 @@
       if (activeProjectKeyInput) activeProjectKeyInput.value = project_key;
       submitBtn.disabled = true;
       if (waitNoteEl) waitNoteEl.classList.remove("hidden");
-      
+
       addLog(`Initiating R&D sequence: ${project_key}`, "sys");
       animateWorkflow();
 
@@ -239,7 +395,9 @@
           body: JSON.stringify(payload),
         });
         const body = await res.json();
-        showResultsView(body);
+        saveRunToHistory(project_key, body);
+        renderPastRuns();
+        showResultsView(body, project_key);
       } catch (err) {
         showResultsView({ status: "error", error: String(err) });
       } finally {
@@ -252,18 +410,18 @@
   const chatForm = document.getElementById("chat-form");
   const chatInput = document.getElementById("chat-input");
   if (chatForm && chatInput) {
-    chatForm.addEventListener("submit", async function(e) {
+    chatForm.addEventListener("submit", async function (e) {
       e.preventDefault();
       const message = chatInput.value.trim();
       if (!message) return;
-      
+
       chatInput.value = "";
       addLog(`User: ${message}`, "sys");
       addLog("Sending prompt to /refine endpoint...", "orchestrator");
-      
+
       // Mock network delay
       await new Promise(r => setTimeout(r, 1000));
-      
+
       addLog("Refining artifacts based on user feedback.", "tech_lead");
     });
   }
@@ -282,19 +440,29 @@
     });
   }
 
-  function showResultsView(body) {
+  function showResultsView(body, projectKey) {
     if (resultsPanel) resultsPanel.classList.remove("hidden");
+    // Show project key in modal header
+    if (modalProjectLabel) {
+      modalProjectLabel.textContent = projectKey ? `🗂 ${projectKey}` : "";
+    }
     if (resultsBanner) {
       resultsBanner.textContent = body.status === "success" ? "Sequence Success" : "Sequence Failed";
       resultsBanner.className = `results-banner results-banner--${body.status === "success" ? "ok" : "err"}`;
     }
-    if (summaryText) summaryText.textContent = body.outcome?.summary || body.error || "";
-    
-    // --- Notion Links ---
+    if (summaryText) {
+      let raw = body.outcome?.summary || body.error || "";
+      summaryText.textContent = raw;
+    }
+
+    // --- Notion & Workspace Links ---
     if (notionLinkCards) {
       notionLinkCards.innerHTML = "";
       const notionLinks = [];
 
+      if (body.workspace_download_url) {
+        notionLinks.push({ title: "📦 Download Workspace ZIP", url: body.workspace_download_url });
+      }
       if (body.notion?.hub_page_url) {
         notionLinks.push({ title: "📁 Runs Hub", url: body.notion.hub_page_url });
       }
@@ -314,7 +482,7 @@
           card.href = link.url;
           card.target = "_blank";
           card.className = "link-card";
-          card.innerHTML = `<h3 class="link-card-title">${escapeHtml(link.title)}</h3><span class="link-card-sub">${escapeHtml(link.url)}</span>`;
+          card.innerHTML = `<h3 class="link-card-title">${escapeHtml(link.title)}</h3><span class="link-card-sub">Open in Notion →</span>`;
           notionLinkCards.appendChild(card);
         });
         if (notionSection) notionSection.classList.remove("hidden");
@@ -325,14 +493,14 @@
     if (calendarLinkCards) {
       calendarLinkCards.innerHTML = "";
       const calLinks = body.calendar_event_links || [];
-      
+
       if (calLinks.length > 0) {
         calLinks.forEach((url, i) => {
           const card = document.createElement("a");
           card.href = url;
           card.target = "_blank";
           card.className = "link-card";
-          card.innerHTML = `<h3 class="link-card-title">📅 Calendar Event #${i + 1}</h3><span class="link-card-sub">${escapeHtml(url)}</span>`;
+          card.innerHTML = `<h3 class="link-card-title">📅 Calendar Event #${i + 1}</h3><span class="link-card-sub">Open in Google Calendar →</span>`;
           calendarLinkCards.appendChild(card);
         });
         if (calendarSection) calendarSection.classList.remove("hidden");
@@ -349,9 +517,9 @@
       document.querySelectorAll(".view-layer").forEach(v => v.classList.add("hidden"));
       document.getElementById(`${tab}-view`).classList.remove("hidden");
       if (activeViewName) {
-        activeViewName.textContent = 
-          tab === "run-pipeline" ? "Control" : 
-          tab === "war-room" ? "Team War-Room" : "Workspace";
+        activeViewName.textContent =
+          tab === "run-pipeline" ? "Control" :
+            tab === "war-room" ? "Team War-Room" : "Workspace";
       }
       if (tab === "code-explorer") renderFileTree();
       if (tab === "war-room") renderWarRoom();
@@ -370,20 +538,24 @@
   ];
 
   const MOCK_FILES = [
-    { name: "src", type: "folder", children: [
-      { name: "main.py", type: "file", content: "# Main Entry Point\nprint('System Online')" },
-      { name: "agents.py", type: "file", content: "class Agent:\n    pass" }
-    ]},
-    { name: "docs", type: "folder", children: [
-      { name: "README.md", type: "file", content: "# Project Workspace\nThis is the generated project documentation." }
-    ]},
+    {
+      name: "src", type: "folder", children: [
+        { name: "main.py", type: "file", content: "# Main Entry Point\nprint('System Online')" },
+        { name: "agents.py", type: "file", content: "class Agent:\n    pass" }
+      ]
+    },
+    {
+      name: "docs", type: "folder", children: [
+        { name: "README.md", type: "file", content: "# Project Workspace\nThis is the generated project documentation." }
+      ]
+    },
     { name: "config.json", type: "file", content: "{\n  \"version\": \"1.0.0\"\n}" }
   ];
 
   function renderWarRoom() {
     const grid = document.getElementById("war-room-grid");
     if (!grid) return;
-    
+
     // Group tasks by agent
     const grouped = MOCK_TEAM_TASKS.reduce((acc, task) => {
       if (!acc[task.agent]) acc[task.agent] = [];
@@ -392,11 +564,11 @@
     }, {});
 
     grid.innerHTML = "";
-    
+
     Object.entries(grouped).forEach(([agent, tasks]) => {
       const column = document.createElement("div");
       column.className = "war-room-column glass-panel";
-      
+
       const header = document.createElement("div");
       header.className = "column-header";
       header.innerHTML = `<h3>${agent}</h3><span class="task-count">${tasks.length} Tasks</span>`;
@@ -404,7 +576,7 @@
 
       const taskList = document.createElement("div");
       taskList.className = "task-list";
-      
+
       tasks.forEach(task => {
         const card = document.createElement("div");
         card.className = "task-card";
@@ -415,7 +587,7 @@
         `;
         taskList.appendChild(card);
       });
-      
+
       column.appendChild(taskList);
       grid.appendChild(column);
     });
@@ -430,7 +602,7 @@
       const el = document.createElement("div");
       el.className = `tree-node ${item.type}`;
       const currentPath = path ? `${path}/${item.name}` : item.name;
-      
+
       if (item.type === "folder") {
         el.innerHTML = `<span class="toggle">📂</span> <span class="node-name">${item.name}</span>`;
         const childrenContainer = document.createElement("div");
