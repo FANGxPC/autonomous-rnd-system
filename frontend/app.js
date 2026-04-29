@@ -21,6 +21,10 @@
   const pastRunsChevron = document.getElementById("past-runs-chevron");
   const pastRunsList = document.getElementById("past-runs-list");
   const pastRunsEmpty = document.getElementById("past-runs-empty");
+  const chatForm = document.getElementById("chat-form");
+  const chatInput = document.getElementById("chat-input");
+  const modalChatForm = document.getElementById("modal-chat-form");
+  const modalChatInput = document.getElementById("modal-chat-input");
 
   // ── localStorage run history ─────────────────────────────────
   const LS_KEY = "rnd_run_history";
@@ -216,7 +220,10 @@
     const time = getISTTime();
     entry.innerHTML = `<span class="log-time">${time}</span> <span class="log-tag tag-${author}">[${author.toUpperCase()}]</span> <span class="log-msg">${message}</span>`;
     terminalLog.appendChild(entry);
-    terminalLog.scrollTop = terminalLog.scrollHeight;
+    terminalLog.scrollTo({
+      top: terminalLog.scrollHeight,
+      behavior: 'auto'
+    });
   }
 
   // --- Team Configuration ---
@@ -228,7 +235,12 @@
 
   if (teamToggle && teamConfigBody) {
     teamToggle.addEventListener("change", () => {
-      teamConfigBody.classList.toggle("hidden", !teamToggle.checked);
+      const isVisible = teamToggle.checked;
+      teamConfigBody.classList.toggle("hidden", !isVisible);
+      
+      // Redraw workflow links after layout shift
+      setTimeout(drawWorkflowLinks, 100);
+      setTimeout(drawWorkflowLinks, 500); // After transition finishes
     });
   }
 
@@ -249,6 +261,8 @@
       `;
       teamMembersContainer.appendChild(row);
     }
+    // Redraw links after generating rows as layout will shift
+    setTimeout(drawWorkflowLinks, 100);
   }
 
   if (generateRowsBtn) {
@@ -302,9 +316,13 @@
     drawCurve(getCenter(nodes.parse), getCenter(nodes.orchestrate), "link-2");
     drawCurve(getCenter(nodes.orchestrate), getCenter(nodes.research), "link-3");
     drawCurve(getCenter(nodes.orchestrate), getCenter(nodes.architect), "link-4");
+    
+    // Links to Synthesize (ensure these IDs exist in index.html)
+    drawCurve(getCenter(nodes.research), getCenter(nodes.synthesize), "link-5");
+    drawCurve(getCenter(nodes.architect), getCenter(nodes.synthesize), "link-6");
   }
 
-  async function animateWorkflow() {
+  async function animateWorkflow(pipelinePromise) {
     const reset = () => {
       Object.values(nodes).forEach(n => n.classList.remove("active", "completed"));
       document.querySelectorAll(".wf-link").forEach(l => l.classList.remove("active"));
@@ -330,12 +348,30 @@
       }
     };
 
-    await step("receive", "link-1", 1000, "Intercepting incoming mission parameters...", "sys");
-    await step("parse", "link-2", 1000, "NLP Engine parsing intent and extracting scope.", "sys");
-    await step("orchestrate", "link-3", 1500, "Allocating tasks to specialized agent network.", "orchestrator");
-    await step("research", null, 2000, "Scraping technical docs and competitive data...", "research");
-    await step("architect", "link-4", 2000, "Drafting system architecture and verifying constraints...", "tech_lead");
-    await step("synthesize", null, 1500, "Synthesizing final artifacts for deployment.", "sys");
+    // Initial sequence
+    await step("receive", "link-1", 2000, "Intercepting incoming mission parameters...", "sys");
+    await step("parse", "link-2", 3000, "NLP Engine parsing intent and extracting scope.", "sys");
+    await step("orchestrate", "link-3", 4000, "Allocating tasks to specialized agent network.", "orchestrator");
+    
+    // Activate incoming link to Tech Lead in parallel with link-3 which was for Research
+    document.getElementById("link-4")?.classList.add("active");
+    
+    // Core processing steps (parallel animation)
+    const research = step("research", "link-5", 6000, "Scraping technical docs and competitive data...", "research");
+    const architect = step("architect", "link-6", 6000, "Drafting system architecture and verifying constraints...", "tech_lead");
+    
+    await Promise.all([research, architect]);
+
+    // Final synthesis stage
+    await step("synthesize", null, 4000, "Synthesizing all agent outputs into final artifacts.", "orchestrator");
+    
+    if (pipelinePromise) {
+      addLog("Synchronizing with neural core... finalizing agent outputs.", "sys");
+      await pipelinePromise;
+    }
+
+    // Final step only after backend is done
+    await step("synthesize", null, 4000, "Synthesizing final artifacts for deployment.", "sys");
 
     if (executionStatus) executionStatus.textContent = "COMPLETED";
   }
@@ -348,7 +384,9 @@
 
   // --- Initializers ---
   window.addEventListener("resize", drawWorkflowLinks);
+  setTimeout(drawWorkflowLinks, 100);
   setTimeout(drawWorkflowLinks, 500);
+  setTimeout(drawWorkflowLinks, 2000); // Catch-all for slow renders
 
   const deadlineEl = document.getElementById("deadline");
   if (deadlineEl) {
@@ -377,28 +415,39 @@
       if (waitNoteEl) waitNoteEl.classList.remove("hidden");
 
       addLog(`Initiating R&D sequence: ${project_key}`, "sys");
-      animateWorkflow();
 
       const teamData = collectTeamMembers();
       if (teamData.team_members && teamData.team_members.length > 0) {
         addLog(`Team mode: ${teamData.team_members.length} member(s) configured.`, "sys");
       }
 
-      try {
-        const payload = { prompt, deadline, project_key };
-        if (teamData.num_teammates > 0) payload.num_teammates = teamData.num_teammates;
-        if (teamData.team_members) payload.team_members = teamData.team_members;
+      const payload = { prompt, deadline, project_key };
+      if (teamData.num_teammates > 0) payload.num_teammates = teamData.num_teammates;
+      if (teamData.team_members) payload.team_members = teamData.team_members;
 
-        const res = await fetch(`${API_BASE}/trigger-pipeline`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        const body = await res.json();
+      // 1. Create the pipeline promise
+      const pipelinePromise = fetch(`${API_BASE}/trigger-pipeline`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }).then(res => res.json());
+
+      // 2. Pass promise to animation (it will wait for it internally)
+      // 3. Await the animation to finish before showing the results modal
+      const workflowAnimation = animateWorkflow(pipelinePromise);
+
+      try {
+        const body = await pipelinePromise;
         saveRunToHistory(project_key, body);
         renderPastRuns();
+
+        // Wait for the animation to reach the "Synthesize" phase and finish
+        await workflowAnimation;
+
         showResultsView(body, project_key);
       } catch (err) {
+        // If it fails, we still want to stop the animation and show error
+        await workflowAnimation;
         showResultsView({ status: "error", error: String(err) });
       } finally {
         submitBtn.disabled = false;
@@ -407,22 +456,98 @@
     });
   }
 
-  const chatForm = document.getElementById("chat-form");
-  const chatInput = document.getElementById("chat-input");
   if (chatForm && chatInput) {
     chatForm.addEventListener("submit", async function (e) {
       e.preventDefault();
       const message = chatInput.value.trim();
-      if (!message) return;
+      const project_key = activeProjectKeyInput ? activeProjectKeyInput.value.trim() : "idle";
+
+      if (!message || project_key === "idle") {
+        addLog("Refinement requires an active project session.", "sys");
+        return;
+      }
 
       chatInput.value = "";
-      addLog(`User: ${message}`, "sys");
-      addLog("Sending prompt to /refine endpoint...", "orchestrator");
+      addLog(`User Refinement: ${message}`, "sys");
+      addLog("Transmitting refinement parameters to Tech Lead...", "orchestrator");
 
-      // Mock network delay
-      await new Promise(r => setTimeout(r, 1000));
+      // 1. Create the refinement promise
+      const refinePromise = fetch(`${API_BASE}/refine`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project_key, prompt: message }),
+      }).then(res => res.json());
 
-      addLog("Refining artifacts based on user feedback.", "tech_lead");
+      // 2. Trigger animation
+      const workflowAnimation = animateWorkflow(refinePromise);
+
+      try {
+        const body = await refinePromise;
+        if (body.status === "success") {
+          addLog("Refinement successfully applied to project artifacts.", "sys");
+          // Save to history (optional, but good for tracking)
+          saveRunToHistory(project_key, body);
+          renderPastRuns();
+          
+          await workflowAnimation;
+          showResultsView(body, project_key);
+        } else {
+          addLog(`Refinement failed: ${body.error}`, "sys");
+          await workflowAnimation;
+          showResultsView(body, project_key);
+        }
+      } catch (err) {
+        addLog(`Refinement Error: ${err.message}`, "sys");
+        await workflowAnimation;
+      }
+    });
+  }
+
+  // --- Modal Refinement Logic ---
+  if (modalChatForm && modalChatInput) {
+    modalChatForm.addEventListener("submit", async function (e) {
+      e.preventDefault();
+      const message = modalChatInput.value.trim();
+      const project_key = modalChatForm.getAttribute("data-project-key");
+
+      if (!message || !project_key || project_key === "idle") {
+        addLog("Refinement requires an active project session.", "orchestrator");
+        return;
+      }
+
+      modalChatInput.value = "";
+      
+      // Close modal before starting animation
+      if (resultsPanel) resultsPanel.classList.add("hidden");
+      
+      addLog(`User Refinement (from Modal): ${message}`, "sys");
+      addLog("Transmitting refinement parameters to Tech Lead...", "orchestrator");
+
+      const refinePromise = fetch(`${API_BASE}/refine`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project_key, prompt: message }),
+      }).then(res => res.json());
+
+      const workflowAnimation = animateWorkflow(refinePromise);
+
+      try {
+        const body = await refinePromise;
+        if (body.status === "success") {
+          addLog("Refinement successfully applied to project artifacts.", "sys");
+          saveRunToHistory(project_key, body);
+          renderPastRuns();
+          await workflowAnimation;
+          showResultsView(body, project_key);
+        } else {
+          addLog(`Refinement failed: ${body.error}`, "sys");
+          await workflowAnimation;
+          showResultsView(body, project_key);
+        }
+      } catch (err) {
+        addLog(`Refinement Error: ${err.message}`, "sys");
+        await workflowAnimation;
+      }
     });
   }
 
@@ -445,6 +570,9 @@
     // Show project key in modal header
     if (modalProjectLabel) {
       modalProjectLabel.textContent = projectKey ? `🗂 ${projectKey}` : "";
+    }
+    if (modalChatForm) {
+      modalChatForm.setAttribute("data-project-key", projectKey || "idle");
     }
     if (resultsBanner) {
       resultsBanner.textContent = body.status === "success" ? "Sequence Success" : "Sequence Failed";
@@ -508,120 +636,36 @@
     }
   }
 
-  // Tab switching
+  // Tab switching (kept for breadcrumb sync even if only 1 tab)
   document.querySelectorAll(".nav-item").forEach(btn => {
     btn.addEventListener("click", () => {
       const tab = btn.getAttribute("data-tab");
       document.querySelectorAll(".nav-item").forEach(b => b.classList.remove("active"));
       btn.classList.add("active");
       document.querySelectorAll(".view-layer").forEach(v => v.classList.add("hidden"));
-      document.getElementById(`${tab}-view`).classList.remove("hidden");
+      const view = document.getElementById(`${tab}-view`);
+      if (view) view.classList.remove("hidden");
       if (activeViewName) {
-        activeViewName.textContent =
-          tab === "run-pipeline" ? "Control" :
-            tab === "war-room" ? "Team War-Room" : "Workspace";
+        activeViewName.textContent = tab === "run-pipeline" ? "Control" : tab;
       }
-      if (tab === "code-explorer") renderFileTree();
-      if (tab === "war-room") renderWarRoom();
-      if (tab === "run-pipeline") setTimeout(drawWorkflowLinks, 100);
+      if (tab === "run-pipeline") {
+        setTimeout(drawWorkflowLinks, 100);
+        setTimeout(drawWorkflowLinks, 500); // Second pass for layout settling
+      }
     });
   });
 
-  // --- Mock Data ---
-  const MOCK_TEAM_TASKS = [
-    { agent: "Tech Lead", title: "System Architecture Design", status: "In Progress", priority: "High" },
-    { agent: "Tech Lead", title: "API Endpoint Mapping", status: "Done", priority: "Medium" },
-    { agent: "Research Agent", title: "Market Competitor Analysis", status: "Pending", priority: "High" },
-    { agent: "Research Agent", title: "Vector DB Benchmarking", status: "In Progress", priority: "Medium" },
-    { agent: "Scrum Master", title: "Sprint Planning: Wave 1", status: "Done", priority: "High" },
-    { agent: "Scrum Master", title: "Daily Sync Orchestration", status: "In Progress", priority: "Low" }
-  ];
-
-  const MOCK_FILES = [
-    {
-      name: "src", type: "folder", children: [
-        { name: "main.py", type: "file", content: "# Main Entry Point\nprint('System Online')" },
-        { name: "agents.py", type: "file", content: "class Agent:\n    pass" }
-      ]
-    },
-    {
-      name: "docs", type: "folder", children: [
-        { name: "README.md", type: "file", content: "# Project Workspace\nThis is the generated project documentation." }
-      ]
-    },
-    { name: "config.json", type: "file", content: "{\n  \"version\": \"1.0.0\"\n}" }
-  ];
-
-  function renderWarRoom() {
-    const grid = document.getElementById("war-room-grid");
-    if (!grid) return;
-
-    // Group tasks by agent
-    const grouped = MOCK_TEAM_TASKS.reduce((acc, task) => {
-      if (!acc[task.agent]) acc[task.agent] = [];
-      acc[task.agent].push(task);
-      return acc;
-    }, {});
-
-    grid.innerHTML = "";
-
-    Object.entries(grouped).forEach(([agent, tasks]) => {
-      const column = document.createElement("div");
-      column.className = "war-room-column glass-panel";
-
-      const header = document.createElement("div");
-      header.className = "column-header";
-      header.innerHTML = `<h3>${agent}</h3><span class="task-count">${tasks.length} Tasks</span>`;
-      column.appendChild(header);
-
-      const taskList = document.createElement("div");
-      taskList.className = "task-list";
-
-      tasks.forEach(task => {
-        const card = document.createElement("div");
-        card.className = "task-card";
-        card.innerHTML = `
-          <div class="task-priority priority-${task.priority.toLowerCase()}">${task.priority}</div>
-          <div class="task-title">${task.title}</div>
-          <div class="task-status">${task.status}</div>
-        `;
-        taskList.appendChild(card);
-      });
-
-      column.appendChild(taskList);
-      grid.appendChild(column);
-    });
-  }
-
-  function renderFileTree() {
-    const tree = document.getElementById("file-tree");
-    if (!tree) return;
-    tree.innerHTML = "";
-
-    function buildNode(item, container, path = "") {
-      const el = document.createElement("div");
-      el.className = `tree-node ${item.type}`;
-      const currentPath = path ? `${path}/${item.name}` : item.name;
-
-      if (item.type === "folder") {
-        el.innerHTML = `<span class="toggle">📂</span> <span class="node-name">${item.name}</span>`;
-        const childrenContainer = document.createElement("div");
-        childrenContainer.className = "node-children";
-        item.children.forEach(child => buildNode(child, childrenContainer, currentPath));
-        el.appendChild(childrenContainer);
-      } else {
-        el.innerHTML = `<span class="icon">📄</span> <span class="node-name">${item.name}</span>`;
-        el.addEventListener("click", () => {
-          document.getElementById("active-filename").textContent = item.name;
-          document.getElementById("file-path").textContent = `/workspace/${currentPath}`;
-          document.getElementById("code-viewer").textContent = item.content;
-        });
-      }
-      container.appendChild(el);
+  // Re-draw links on window resize
+  window.addEventListener("resize", () => {
+    const activeTab = document.querySelector(".nav-item.active")?.getAttribute("data-tab");
+    if (activeTab === "run-pipeline") {
+      drawWorkflowLinks();
     }
+  });
 
-    MOCK_FILES.forEach(file => buildNode(file, tree));
-  }
+  // Initial draw
+  setTimeout(drawWorkflowLinks, 1000);
+
 
   // Theme Toggle
   const themeToggle = document.getElementById("theme-toggle");

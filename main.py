@@ -31,9 +31,10 @@ from rich.panel import Panel
 from rich.rule import Rule
 
 from agents import ADK_LITE, ADK_MODEL, tech_lead_agent
-from database import log_run_history, get_run_history
+from database import log_run_history, get_run_history, save_project_context, retrieve_context
 from mcp_bridge import mcp_http_asgi, mcp_http_lifespan
 from notion_tool import begin_notion_run_workspace, end_notion_run_workspace
+from workspace_tool import prepare_project_workspace, global_workspace_urls, _slug
 
 app = FastAPI(
     title="Deep-Tech Sprint - Autonomous R&D System",
@@ -81,6 +82,10 @@ class TriggerRequest(BaseModel):
     project_key: str = Field(default="hackathon_demo", description="Firestore + session scope")
     num_teammates: int = 0
     team_members: list[TeamMember] | None = None
+
+class RefineRequest(BaseModel):
+    project_key: str
+    prompt: str
 
 
 def _user_message(req: TriggerRequest) -> str:
@@ -430,10 +435,19 @@ async def trigger_pipeline(request: TriggerRequest):
             f"[dim]Notion run workspace: {notion_run['run_page_url']}[/dim]"
         )
 
+    # ── PERSIST TEAM CONFIG ──
+    try:
+        import json
+        team_dict = [m.model_dump() for m in request.team_members] if request.team_members else []
+        if team_dict:
+            save_project_context(request.project_key, "team_config", json.dumps(team_dict))
+            console.print(f"[dim]Team configuration saved to Firestore[/dim]")
+    except Exception as e:
+        console.print(f"[yellow]Failed to save team config: {e}[/yellow]")
+
     # ── Workspace: generate zip directly (not relying on agent) ──
     workspace_download_url: str | None = None
     try:
-        from workspace_tool import prepare_project_workspace, global_workspace_urls, _slug
         ws_result = prepare_project_workspace(
             project_name=request.project_key,
             short_summary=request.prompt[:200],
@@ -555,6 +569,12 @@ async def trigger_pipeline(request: TriggerRequest):
                 if workspace_download_url:
                     body["workspace_download_url"] = workspace_download_url
 
+                # ── PERSIST PROJECT SUMMARY ──
+                try:
+                    save_project_context(request.project_key, "project_summary", outcome_text)
+                except:
+                    pass
+
                 # Persist to Firestore with full snapshot for history panel
                 result_snapshot = {
                     "status": body.get("status"),
@@ -629,6 +649,116 @@ async def trigger_pipeline(request: TriggerRequest):
                 return JSONResponse(status_code=200, content=err_body)
     finally:
         end_notion_run_workspace(notion_reset_token)
+
+
+@app.post("/refine")
+async def refine_project(request: RefineRequest):
+    """
+    Refines an existing project by retrieving old team info and context,
+    then running the Tech Lead agent with the new user instruction.
+    """
+    import json
+    
+    project_key = request.project_key
+    user_id = "api_user"
+    session_id = f"refine_{project_key}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    started = datetime.now().isoformat()
+
+    console.print(Rule(f"[bold cyan]REFINEMENT START: {project_key}[/bold cyan]", style="cyan"))
+    
+    # 1. Retrieve old team info and project summary
+    context_info_str = ""
+    try:
+        # Retrieve all memory for the project to get a full picture
+        full_memory = retrieve_context(project_key)
+        if "firestore memory" in full_memory.lower():
+            context_info_str = f"\n\n--- EXISTING PROJECT CONTEXT ---\n{full_memory}\n-------------------------------\n"
+    except Exception as e:
+        console.print(f"[yellow]Could not retrieve project context: {e}[/yellow]")
+
+    # 2. Build the refinement message
+    refinement_prompt = (
+        f"This is a REFINEMENT request for existing project: {project_key}\n"
+        f"{context_info_str}"
+        f"User Refinement Instruction:\n{request.prompt}\n\n"
+        "You have been provided with the previous team configuration and project summary above. "
+        "Use this context to identify exactly what needs to be changed. "
+        "Maintain the same team member names and roles. "
+        "Update Notion/Calendar/Workspace based on the new instruction while keeping unchanged parts intact."
+    )
+
+    try:
+        runner = InMemoryRunner(
+            agent=tech_lead_agent,
+            app_name="deep_tech_sprint",
+        )
+        session = await _ensure_session(runner, user_id, session_id)
+        
+        events: list[Any] = []
+        async for event in runner.run_async(
+            user_id=user_id,
+            session_id=session.id,
+            new_message=types.UserContent(parts=[types.Part(text=refinement_prompt)]),
+        ):
+            events.append(event)
+            _log_event(event)
+
+        outcome_text = _trim_to_summary(_extract_outcome(events))
+        finished = datetime.now().isoformat()
+        
+        # ── PERSIST REFINED SUMMARY ──
+        try:
+            save_project_context(project_key, "project_summary", outcome_text)
+        except:
+            pass
+
+        # Construct response similar to trigger-pipeline
+        body = {
+            "status": "success",
+            "outcome": {"summary": outcome_text},
+            "started_at": started,
+            "finished_at": finished,
+        }
+        
+        # Extract Workspace Link if updated
+        ws_slug = _slug(project_key)
+        if ws_slug in global_workspace_urls:
+            body["workspace_download_url"] = global_workspace_urls[ws_slug]
+
+        # Extract Calendar Links
+        _cal = _extract_calendar_event_links(events, outcome_text)
+        if _cal: body["calendar_event_links"] = _cal
+        
+        # Extract Notion Info (if agent updated the board)
+        if _pipeline_created_notion_cards(events):
+             # Try to find the run page from memory or logs
+             _hub = _notion_hub_page_url()
+             if _hub:
+                 body["notion"] = {"hub_page_url": _hub}
+        
+        # Save results to Firestore history as well
+        try:
+            log_run_history(
+                outcome_text[:500],
+                request.prompt,
+                project_key=project_key,
+                result_snapshot=body
+            )
+        except:
+            pass
+
+        await runner.close()
+        return JSONResponse(content=body)
+
+    except Exception as e:
+        console.print(Rule("[bold red]REFINEMENT ERROR[/bold red]", style="red"))
+        console.print(f"[bold red]{e}[/bold red]")
+        return JSONResponse(status_code=200, content={
+            "status": "error",
+            "error": str(e),
+            "started_at": started,
+            "finished_at": datetime.now().isoformat(),
+        })
 
 
 @app.get("/api/run-history")

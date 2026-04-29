@@ -70,17 +70,16 @@ When given a project and a **deadline** (plan end date) in the user message, you
    - status='To Do'
    - deadline: **must match** **D_i** for that task’s calendar block
    - assignee_name: the **exact name** of the assigned team member (routes the card to their personal board)
-   - description: **substantial** (at least 4–8 sentences or bullet blocks) including:
-     • What “done” looks like (acceptance criteria)
-     • Dependencies or prerequisites
-     • Suggested sub-steps or files/modules to touch
-     • Risks or open questions
-     Format bullets as lines starting with `* ` or `- ` so Notion shows real bullet lists; use **Label**:
+   - description: **highly detailed** (at least 8–12 sentences or bullet blocks) including:
+     • **Objective**: Clearly state the technical goal.
+     • **Implementation Path**: Step-by-step logic or pseudo-code approach.
+     • **Definition of Done**: Specific, measurable acceptance criteria.
+     • **Architecture Context**: How this task fits into the broader system.
+     • **Risks & Mitigation**: Potential blockers and how to avoid them.
+     Format bullets as lines starting with `* ` or `- ` so Notion shows real bullet lists; use **Bold Headers**:
      for sub-headings inside bullets. Do NOT use one-line descriptions.
-   - sources: newline-separated list of **URLs and paper titles** copied from research_agent / web /
-     arXiv tool output (2–8 lines). Each line should include the http/https URL when available.
-     This appears under **Sources & references** at the bottom of the card. Use the SAME sources
-     across tasks for this run when they all apply, or the subset relevant to each task.
+   - sources: newline-separated list of **URLs and paper titles** from research_agent.
+     Ensure every card has the relevant URLs provided at the very bottom.
 
 6. Return a SHORT summary (2-3 sentences): how many cards created, how many calendar blocks booked, date range used.
    Do NOT include any raw Notion or Calendar URLs in your summary — the UI displays those separately.
@@ -243,20 +242,24 @@ After ALL sub-agents have finished, output EXACTLY the following — nothing bef
 
 <!-- SUMMARY_START -->
 **<Name> — <Role>**
-<5-6 line paragraph covering: overall responsibility, number of tasks assigned, date range of their calendar blocks, 1-2 key deliverables, and one critical risk or dependency.>
+<2-3 lines: overall responsibility, key tasks, and date range. Use extremely concise, professional language. No bullet points.>
 
 **<Name> — <Role>**
-<5-6 line paragraph — same format>
+<2-3 lines: same format as above.>
 
 (repeat for every team member)
+
+---
+**Sources & Research References**
+<List all relevant URLs and paper titles gathered by the research_agent. Use a clean, numbered list.>
 <!-- SUMMARY_END -->
 
-RULES (non-negotiable):
-- Begin the ENTIRE response with <!-- SUMMARY_START --> — no preamble, no intro sentence.
-- End the ENTIRE response with <!-- SUMMARY_END -->.
-- Write EXACTLY ONE paragraph per member — never two paragraphs for the same person.
-- Each paragraph is 5-6 lines: no bullet lists, no task field labels (no "Task Title:", "Assigned To:", etc.).
-- Zero raw URLs anywhere in the output.
+CONSTRAINTS:
+- EXACTLY ONE paragraph per member.
+- Each paragraph MUST be between 2-3 lines.
+- End with a horizontal rule and a consolidated "Sources & Research References" section.
+- Start with <!-- SUMMARY_START --> and end with <!-- SUMMARY_END -->.
+- No intro, no outro.
 """,
     tools=memory_tools_phase3,
     sub_agents=[

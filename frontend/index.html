@@ -7,9 +7,14 @@
   <link rel="stylesheet" href="styles.css?v=6" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
 </head>
 <body>
+  <div class="bg-glows" aria-hidden="true">
+    <div class="glow glow-1"></div>
+    <div class="glow glow-2"></div>
+    <div class="grain-overlay"></div>
+  </div>
   <div class="dashboard-layout" id="page-root">
     <!-- Sidebar -->
     <aside class="sidebar">
@@ -25,12 +30,6 @@
         <button class="nav-item active" data-tab="run-pipeline" title="System Control">
           <span class="nav-label">Control</span>
         </button>
-        <button class="nav-item" data-tab="war-room" title="Agent Network">
-          <span class="nav-label">Team War-Room</span>
-        </button>
-        <button class="nav-item" data-tab="code-explorer" title="Mission Workspace">
-          <span class="nav-label">Workspace</span>
-        </button>
       </nav>
 
       <!-- Past Runs History -->
@@ -45,10 +44,6 @@
       </div>
 
       <div class="sidebar-footer">
-        <div class="connection-status">
-          <span class="status-dot online"></span>
-          <span>Core Link: OK</span>
-        </div>
         <div id="ist-clock" class="sidebar-clock">--:--:-- IST</div>
       </div>
     </aside>
@@ -172,6 +167,8 @@
                     <path class="wf-link" id="link-2" d="" />
                     <path class="wf-link" id="link-3" d="" />
                     <path class="wf-link" id="link-4" d="" />
+                    <path class="wf-link" id="link-5" d="" />
+                    <path class="wf-link" id="link-6" d="" />
                   </svg>
 
                   <!-- Layer 2: Core Processing -->
@@ -247,6 +244,14 @@
                   <div id="summary-text" class="summary-body"></div>
                 </section>
 
+                <section class="modal-refinement-section">
+                  <h4 class="section-tag">Direct Refinement</h4>
+                  <form id="modal-chat-form" class="modal-chat-form">
+                    <input type="text" id="modal-chat-input" class="modal-chat-input" placeholder="What should we refine in this project?" autocomplete="off" />
+                    <button type="submit" class="modal-refine-btn">Refine</button>
+                  </form>
+                </section>
+
                 <div class="outcome-grid">
                   <div id="notion-section" class="hidden">
                     <h4 class="section-tag">Notion Hub</h4>
@@ -262,60 +267,6 @@
           </div>
         </section>
 
-        <!-- War-Room View -->
-        <section id="war-room-view" class="view-layer hidden">
-          <header class="view-header">
-            <h2 class="view-title">Team War-Room</h2>
-            <p class="view-lead">Tactical task oversight and agent workload distribution.</p>
-          </header>
-          
-          <div id="war-room-grid" class="war-room-columns">
-            <div class="loading-state">
-              <div class="pulsar"></div>
-              <span>Syncing with Neural Network...</span>
-            </div>
-          </div>
-        </section>
-
-        <!-- Code Explorer View -->
-        <section id="code-explorer-view" class="view-layer hidden">
-          <div class="explorer-grid">
-            <!-- Sidebar: File Tree -->
-            <aside class="explorer-sidebar glass-panel">
-              <header class="explorer-header">
-                <span class="explorer-title">ARTIFACT EXPLORER</span>
-                <button class="refresh-btn" id="refresh-files-btn" title="Sync Files">🔄</button>
-              </header>
-              <div id="file-tree" class="file-tree">
-                <div class="tree-loading">
-                  <div class="pulsar"></div>
-                  <span>Scanning Workspace...</span>
-                </div>
-              </div>
-            </aside>
-
-            <!-- Main: Code Previewer -->
-            <main class="code-previewer glass-panel">
-              <header class="preview-header">
-                <div class="file-info">
-                  <span class="file-icon">📄</span>
-                  <div class="file-names">
-                    <span id="active-filename" class="filename">README.md</span>
-                    <span id="file-path" class="filepath">/generated_workspaces/project/README.md</span>
-                  </div>
-                </div>
-                <div class="preview-actions">
-                  <button class="action-btn" id="copy-code-btn">Copy</button>
-                </div>
-              </header>
-              <div class="code-viewport">
-                <pre><code id="code-viewer" class="code-block"># SYSTEM READY
-                  
-Waiting for mission start to generate project artifacts.
-Once the R&D sequence completes, generated code and documentation will appear here.</code></pre>
-              </div>
-            </main>
-          </div>
         </section>
       </div>
 
@@ -326,15 +277,12 @@ Once the R&D sequence completes, generated code and documentation will appear he
             <span class="pulse-icon"></span>
             LIVE AGENT TELEMETRY
           </div>
-          <div class="telemetry-meta">
-            System uptime: 100% | Latency: 42ms
-          </div>
         </div>
         <div class="telemetry-body" id="terminal-log">
           <div class="log-entry">
             <span class="log-time">--:--:--</span>
             <span class="log-tag tag-sys">[SYSTEM]</span>
-            <span class="log-msg">Neural kernel loaded. Awaiting mission parameters.</span>
+            <span class="log-msg">Ready.</span>
           </div>
         </div>
       </footer>
