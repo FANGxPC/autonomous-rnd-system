@@ -25,6 +25,13 @@
   const chatInput = document.getElementById("chat-input");
   const modalChatForm = document.getElementById("modal-chat-form");
   const modalChatInput = document.getElementById("modal-chat-input");
+  const agentThinkingOverlay = document.getElementById("agent-thinking-overlay");
+
+  function setAgentThinkingVisible(show) {
+    if (!agentThinkingOverlay) return;
+    agentThinkingOverlay.classList.toggle("hidden", !show);
+    agentThinkingOverlay.setAttribute("aria-hidden", show ? "false" : "true");
+  }
 
   // ── localStorage run history ─────────────────────────────────
   const LS_KEY = "rnd_run_history";
@@ -122,7 +129,7 @@
       // SAME project key has richer data, use the localStorage body.
 
       function _isRich(body) {
-        return !!(body?.notion || body?.calendar_event_links?.length || body?.workspace_download_url);
+        return !!(body?.notion || body?.calendar_event_links?.length || body?.workspace_download_url || body?.calendar_note);
       }
 
       // Build a map: projectKey → richest localStorage entry
@@ -413,6 +420,7 @@
       if (activeProjectKeyInput) activeProjectKeyInput.value = project_key;
       submitBtn.disabled = true;
       if (waitNoteEl) waitNoteEl.classList.remove("hidden");
+      setAgentThinkingVisible(true);
 
       addLog(`Initiating R&D sequence: ${project_key}`, "sys");
 
@@ -444,10 +452,12 @@
         // Wait for the animation to reach the "Synthesize" phase and finish
         await workflowAnimation;
 
+        setAgentThinkingVisible(false);
         showResultsView(body, project_key);
       } catch (err) {
         // If it fails, we still want to stop the animation and show error
         await workflowAnimation;
+        setAgentThinkingVisible(false);
         showResultsView({ status: "error", error: String(err) });
       } finally {
         submitBtn.disabled = false;
@@ -468,6 +478,7 @@
       }
 
       chatInput.value = "";
+      setAgentThinkingVisible(true);
       addLog(`User Refinement: ${message}`, "sys");
       addLog("Transmitting refinement parameters to Tech Lead...", "orchestrator");
 
@@ -490,15 +501,18 @@
           renderPastRuns();
           
           await workflowAnimation;
+          setAgentThinkingVisible(false);
           showResultsView(body, project_key);
         } else {
           addLog(`Refinement failed: ${body.error}`, "sys");
           await workflowAnimation;
+          setAgentThinkingVisible(false);
           showResultsView(body, project_key);
         }
       } catch (err) {
         addLog(`Refinement Error: ${err.message}`, "sys");
         await workflowAnimation;
+        setAgentThinkingVisible(false);
       }
     });
   }
@@ -516,10 +530,11 @@
       }
 
       modalChatInput.value = "";
-      
+
       // Close modal before starting animation
       if (resultsPanel) resultsPanel.classList.add("hidden");
-      
+      setAgentThinkingVisible(true);
+
       addLog(`User Refinement (from Modal): ${message}`, "sys");
       addLog("Transmitting refinement parameters to Tech Lead...", "orchestrator");
 
@@ -538,15 +553,18 @@
           saveRunToHistory(project_key, body);
           renderPastRuns();
           await workflowAnimation;
+          setAgentThinkingVisible(false);
           showResultsView(body, project_key);
         } else {
           addLog(`Refinement failed: ${body.error}`, "sys");
           await workflowAnimation;
+          setAgentThinkingVisible(false);
           showResultsView(body, project_key);
         }
       } catch (err) {
         addLog(`Refinement Error: ${err.message}`, "sys");
         await workflowAnimation;
+        setAgentThinkingVisible(false);
       }
     });
   }
@@ -555,6 +573,7 @@
   if (newRunBtn) {
     newRunBtn.addEventListener("click", () => {
       if (resultsPanel) resultsPanel.classList.add("hidden");
+      setAgentThinkingVisible(false);
       // Reset sections
       if (notionSection) notionSection.classList.add("hidden");
       if (calendarSection) calendarSection.classList.add("hidden");
@@ -614,24 +633,37 @@
           notionLinkCards.appendChild(card);
         });
         if (notionSection) notionSection.classList.remove("hidden");
+      } else if (notionSection) {
+        notionSection.classList.add("hidden");
       }
     }
 
-    // --- Calendar Links ---
+    // --- Calendar links (htmlLink) or OAuth skip notice ---
     if (calendarLinkCards) {
       calendarLinkCards.innerHTML = "";
       const calLinks = body.calendar_event_links || [];
+      const calNote = typeof body.calendar_note === "string" ? body.calendar_note.trim() : "";
 
       if (calLinks.length > 0) {
         calLinks.forEach((url, i) => {
           const card = document.createElement("a");
           card.href = url;
           card.target = "_blank";
+          card.rel = "noopener noreferrer";
           card.className = "link-card";
           card.innerHTML = `<h3 class="link-card-title">📅 Calendar Event #${i + 1}</h3><span class="link-card-sub">Open in Google Calendar →</span>`;
           calendarLinkCards.appendChild(card);
         });
         if (calendarSection) calendarSection.classList.remove("hidden");
+      } else if (calNote) {
+        const note = document.createElement("div");
+        note.className = "link-card link-card--note";
+        note.setAttribute("role", "note");
+        note.innerHTML = `<h3 class="link-card-title">📅 Calendar</h3><p class="link-card-note-body">${escapeHtml(calNote)}</p>`;
+        calendarLinkCards.appendChild(note);
+        if (calendarSection) calendarSection.classList.remove("hidden");
+      } else if (calendarSection) {
+        calendarSection.classList.add("hidden");
       }
     }
   }

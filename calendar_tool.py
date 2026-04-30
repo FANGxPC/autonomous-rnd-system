@@ -101,6 +101,7 @@ def spread_task_dates(plan_end_date: str, num_tasks: int) -> str:
     lines.append(
         "For each row: **create_calendar_block** (`date` = that ISO day, `duration_hours=2`, **start_hour** "
         "by task index: 1→10, 2→14, 3→16, 4→11, 5→15, 6→9, 7→17, 8→13, then repeat). "
+        "If the assignee has an email, pass **`invite_email`** so Google emails them the invite (organizer stays the OAuth calendar). "
         "Then **create_kanban_card** with **deadline** = that same ISO date. Do not call get_free_slots first."
     )
     return "\n".join(lines)
@@ -138,13 +139,14 @@ def _build_deep_work_event(
     start_hour: int,
     duration_hours: int,
     description: str,
+    attendees: list[dict] | None = None,
 ) -> dict:
     base = datetime(day.year, day.month, day.day, tzinfo=IST)
     start_dt = base.replace(
         hour=start_hour, minute=0, second=0, microsecond=0
     )
     end_dt = start_dt + timedelta(hours=duration_hours)
-    return {
+    ev: dict = {
         "summary": f"🔒 Deep Work: {task_title}",
         "description": description or f"Focused session for: {task_title}",
         "start": {
@@ -161,6 +163,9 @@ def _build_deep_work_event(
             "overrides": [{"method": "popup", "minutes": 10}],
         },
     }
+    if attendees:
+        ev["attendees"] = attendees
+    return ev
 
 
 def create_calendar_block(
@@ -169,7 +174,8 @@ def create_calendar_block(
     start_hour: int = 14,
     duration_hours: int = 2,
     description: str = "",
-    calendar_email: str = ""
+    calendar_email: str = "",
+    invite_email: str = "",
 ) -> str:
     """
     Creates a Deep Work time block on Google Calendar.
@@ -181,17 +187,27 @@ def create_calendar_block(
         start_hour:      Start hour in 24h format (default 14 = 2 PM IST)
         duration_hours:  How many hours to block (default 2)
         description:     Optional notes for the calendar event
-        calendar_email:  Team member email representing the calendar ID (default will use primary)
+        calendar_email:  Calendar ID to write to when NOT using invites (must be writable by token)
+        invite_email:    Assignee email — if set, event is created on the OAuth user's calendar
+                         (GOOGLE_CALENDAR_ID / primary) and Google sends them a standard calendar invite.
 
     Returns:
         Confirmation string with the Google Calendar event link
     """
     try:
         service = _get_calendar_service()
-        target_calendar_id = calendar_email.strip() if calendar_email and calendar_email.strip() else CALENDAR_ID
+        inv = invite_email.strip() if invite_email else ""
+        attendees: list[dict] | None = [{"email": inv}] if inv else None
+        # Invites: always use organizer calendar; private teammate calendars are not writable with one token.
+        if inv:
+            target_calendar_id = CALENDAR_ID
+        else:
+            target_calendar_id = (
+                calendar_email.strip() if calendar_email and calendar_email.strip() else CALENDAR_ID
+            )
         day = datetime.strptime(date, "%Y-%m-%d").date()
         event = _build_deep_work_event(
-            task_title, day, start_hour, duration_hours, description
+            task_title, day, start_hour, duration_hours, description, attendees=attendees
         )
 
         # Cleanup logic: Look for existing event with the same title around the time window
@@ -211,27 +227,34 @@ def create_calendar_block(
             if ev.get("summary") == event["summary"]:
                 # Update existing event instead of creating
                 updated = service.events().update(
-                    calendarId=target_calendar_id, 
-                    eventId=ev["id"], 
-                    body=event
+                    calendarId=target_calendar_id,
+                    eventId=ev["id"],
+                    body=event,
+                    sendUpdates="all",
                 ).execute()
                 raw_link = updated.get("htmlLink") or "no-link"
                 link = raw_link.strip() if isinstance(raw_link, str) else str(raw_link)
+                inv_tail = f" | Invite emailed: {inv}" if inv else ""
                 return (
                     f"🔄 Calendar block updated (avoided duplicate): '🔒 Deep Work: {task_title}' | "
                     f"Date: {date} {start_hour}:00–{start_hour + duration_hours}:00 IST | Link: {link}"
+                    f"{inv_tail}"
                 )
 
         created = service.events().insert(
-            calendarId=target_calendar_id, body=event
+            calendarId=target_calendar_id,
+            body=event,
+            sendUpdates="all",
         ).execute()
 
         raw_link = created.get("htmlLink") or "no-link"
         link = raw_link.strip() if isinstance(raw_link, str) else str(raw_link)
+        inv_tail = f" | Invite emailed: {inv}" if inv else ""
         # Single-line Link: avoids broken URLs when logs/UI concatenate lines (e.g. "\\n3").
         return (
             f"✅ Calendar block created: '🔒 Deep Work: {task_title}' | "
             f"Date: {date} {start_hour}:00–{start_hour + duration_hours}:00 IST | Link: {link}"
+            f"{inv_tail}"
         )
 
     except Exception as e:

@@ -93,10 +93,18 @@ def _build_mcp() -> FastMCP:
         start_hour: int = 14,
         duration_hours: int = 2,
         description: str = "",
+        calendar_email: str = "",
+        invite_email: str = "",
     ) -> str:
         """Create a Deep Work block on Google Calendar (OAuth token.json on server)."""
         return create_calendar_block(
-            task_title, date, start_hour, duration_hours, description
+            task_title,
+            date,
+            start_hour,
+            duration_hours,
+            description,
+            calendar_email=calendar_email,
+            invite_email=invite_email,
         )
 
     return mcp

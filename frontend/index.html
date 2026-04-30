@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>R&D Autonomous System | Control</title>
-  <link rel="stylesheet" href="styles.css?v=6" />
+  <link rel="stylesheet" href="styles.css?v=8" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
@@ -15,6 +15,19 @@
     <div class="glow glow-2"></div>
     <div class="grain-overlay"></div>
   </div>
+  <!-- Lightweight overlay while pipeline/refine requests are in flight -->
+  <div id="agent-thinking-overlay" class="agent-thinking-overlay hidden" aria-hidden="true" role="presentation">
+    <div class="agent-thinking-card">
+      <div class="agent-thinking-orbit" aria-hidden="true">
+        <span class="agent-thinking-dot agent-thinking-dot--a"></span>
+        <span class="agent-thinking-dot agent-thinking-dot--b"></span>
+        <span class="agent-thinking-dot agent-thinking-dot--c"></span>
+      </div>
+      <p class="agent-thinking-title">Agents are thinking…</p>
+      <p class="agent-thinking-sub">Synthesizing your mission — grab a coffee, this bit loves drama ☕✨</p>
+    </div>
+  </div>
+
   <div class="dashboard-layout" id="page-root">
     <!-- Sidebar -->
     <aside class="sidebar">
@@ -126,7 +139,7 @@
                   <div class="btn-shimmer"></div>
                 </button>
                 
-                <p id="pipeline-wait-note" class="wait-note hidden">Agent allocation in progress... (5-10m expected)</p>
+                <p id="pipeline-wait-note" class="wait-note hidden">Agents are building artifacts — larger scopes often take 5–10 minutes.</p>
               </form>
             </div>
 
@@ -140,7 +153,16 @@
                   </div>
                 </header>
 
-                <div class="workflow-canvas">
+                <div id="artifact-build-banner" class="artifact-build-banner hidden" role="status" aria-live="polite">
+                  <span class="artifact-build-banner__icon" aria-hidden="true">⚙️</span>
+                  <div class="artifact-build-banner__text">
+                    <strong>Building artifacts</strong>
+                    <span class="artifact-build-banner__sub">Notion pages and calendar blocks can take <strong>5–10 minutes</strong> on bigger projects — safe to leave this tab open.</span>
+                  </div>
+                </div>
+
+                <div class="workflow-graph-scroll">
+                  <div class="workflow-canvas">
                   <!-- Layer 1: Inputs -->
                   <div class="workflow-column">
                     <div class="workflow-node" id="wf-receive">
@@ -214,6 +236,7 @@
                       <div class="node-status-icon"></div>
                     </div>
                   </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -237,12 +260,28 @@
                 <button class="modal-close" id="new-run-btn" aria-label="Close results">&times;</button>
               </div>
               <div id="results-banner" class="results-banner"></div>
-              
+              <p class="results-spam-note" role="note">
+                📬 Calendar invites from Google can land in <strong>Spam</strong> or <strong>Promotions</strong> — peek there if teammates don’t see their invite.
+              </p>
+
               <div class="modal-scroll-area">
-                <section class="outcome-section">
-                  <h4 class="section-tag">Summary Report</h4>
-                  <div id="summary-text" class="summary-body"></div>
-                </section>
+                <div class="modal-results-layout">
+                  <section class="outcome-section modal-summary-col">
+                    <h4 class="section-tag">Summary Report</h4>
+                    <div id="summary-text" class="summary-body"></div>
+                  </section>
+
+                  <div class="modal-links-row">
+                    <div id="notion-section" class="modal-link-column hidden">
+                      <h4 class="section-tag">Notion Hub</h4>
+                      <div class="link-grid" id="notion-link-cards"></div>
+                    </div>
+                    <div id="calendar-section" class="modal-link-column hidden">
+                      <h4 class="section-tag">Temporal Blocks</h4>
+                      <div class="link-grid" id="calendar-link-cards"></div>
+                    </div>
+                  </div>
+                </div>
 
                 <section class="modal-refinement-section">
                   <h4 class="section-tag">Direct Refinement</h4>
@@ -251,22 +290,9 @@
                     <button type="submit" class="modal-refine-btn">Refine</button>
                   </form>
                 </section>
-
-                <div class="outcome-grid">
-                  <div id="notion-section" class="hidden">
-                    <h4 class="section-tag">Notion Hub</h4>
-                    <div class="link-grid" id="notion-link-cards"></div>
-                  </div>
-                  <div id="calendar-section" class="hidden">
-                    <h4 class="section-tag">Temporal Blocks</h4>
-                    <div class="link-grid" id="calendar-link-cards"></div>
-                  </div>
-                </div>
               </div>
             </div>
           </div>
-        </section>
-
         </section>
       </div>
 
@@ -290,6 +316,6 @@
   </div>
 
   <script>window.API_BASE = "";</script>
-  <script src="app.js?v=7"></script>
+  <script src="app.js?v=9"></script>
 </body>
 </html>
