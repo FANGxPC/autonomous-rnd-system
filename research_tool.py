@@ -207,3 +207,4 @@ def search_arxiv(query: str, max_results: int | None = None) -> str:
         lines.append("")
 
     return "\n".join(lines).strip()
+

@@ -20,3 +20,4 @@ EXPOSE 8080
 
 # Do not rely on .env inside the image — use Cloud Run env vars + Secret Manager
 CMD exec uvicorn main:app --host 0.0.0.0 --port "${PORT}"
+
