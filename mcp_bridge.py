@@ -156,3 +156,4 @@ mcp_http_asgi: Any = (
     MCPAuthASGIWrapper(_raw_mcp_http_app, _secret) if _secret else _raw_mcp_http_app
 )
 mcp_http_lifespan = _raw_mcp_http_app.router.lifespan_context
+

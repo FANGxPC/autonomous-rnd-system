@@ -124,3 +124,4 @@ def prepare_project_workspace(project_name: str, short_summary: str = "", num_te
     if members_to_create:
         confirm_msg += f", and {len(members_to_create)} team member subdirectories."
     return confirm_msg
+

@@ -831,3 +831,4 @@ if __name__ == "__main__":
         f"({'Bearer + MCP_AUTH_TOKEN' if os.getenv('MCP_AUTH_TOKEN', '').strip() else 'no MCP_AUTH_TOKEN — open'})"
     )
     uvicorn.run(app, host=_host, port=_port)
+

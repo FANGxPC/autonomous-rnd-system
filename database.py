@@ -414,3 +414,4 @@ def save_project_registry(project_key):
 
         with open(PROJECTS_FILE, "w") as f:
             json.dump(projects, f, indent=2)
+
