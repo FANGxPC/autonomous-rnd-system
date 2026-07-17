@@ -207,7 +207,7 @@ def run_test():
     project = "verilog_alu_demo"
     
     save_project_context(project, "requirements", "Design 16-bit RISC processor with ALU in Verilog", "Must be pipelined")
-    save_project_context(project, "deadline", "2026-04-30", "Final hackathon submission")
+    save_project_context(project, "deadline", "2026-04-30", "Final project submission")
     save_project_context(project, "research", "https://arxiv.org/pdf/2305.12345.pdf", "Good RISC-V ALU reference")
     
     print("\nRetrieving full memory:")

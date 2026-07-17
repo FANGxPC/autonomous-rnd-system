@@ -38,7 +38,7 @@ from workspace_tool import prepare_project_workspace, global_workspace_urls, _sl
 
 app = FastAPI(
     title="Deep-Tech Sprint - Autonomous R&D System",
-    description="Google Gen AI APAC Hackathon — POST /trigger-pipeline to run the ADK agent pipeline.",
+    description="Autonomous R&D pipeline — POST /trigger-pipeline to run the ADK agent pipeline.",
     version="1.0",
     lifespan=mcp_http_lifespan,
 )
@@ -79,7 +79,7 @@ class TeamMember(BaseModel):
 class TriggerRequest(BaseModel):
     prompt: str
     deadline: str = "2026-04-30"
-    project_key: str = Field(default="hackathon_demo", description="Firestore + session scope")
+    project_key: str = Field(default="project_demo", description="Firestore + session scope")
     num_teammates: int = 0
     team_members: list[TeamMember] | None = None
 
@@ -417,7 +417,7 @@ async def trigger_pipeline(request: TriggerRequest):
                 "error": str(e),
                 "notion_setup_hint": (
                     "Notion cannot access the page in NOTION_RUNS_PARENT_PAGE_ID. "
-                    "In Notion, open that hub page (e.g. Testing hackathon) → Share → "
+                    "In Notion, open that hub page (e.g. Sprint workspace) → Share → "
                     "invite your integration by name (e.g. autonomous-rnd-agent). "
                     "Confirm the id matches the page URL (32 hex chars, with or without hyphens)."
                 ),

@@ -1,6 +1,6 @@
 # Autonomous R&D System (Deep-Tech Sprint)
 
-**Google Gen AI APAC Hackathon** — From a single mission brief to structured, persistent outputs: **Firestore** memory, **Google ADK** multi-agent orchestration, **Notion** Kanban and run workspaces, **Google Calendar** deep-work blocks with **guest invitations**, live web research, optional **on-disk workspace** scaffolding, and a **web control dashboard** served alongside the API.
+From a single mission brief to structured, persistent outputs: **Firestore** memory, **Google ADK** multi-agent orchestration, **Notion** Kanban and run workspaces, **Google Calendar** deep-work blocks with **guest invitations**, live web research, optional **on-disk workspace** scaffolding, and a **web control dashboard** served alongside the API.
 
 ---
 
@@ -270,4 +270,4 @@ Replace placeholders; prefer Secret Manager for long-lived secrets in production
 
 ---
 
-Entry for the **Google Gen AI APAC Hackathon**: multi-agent planning with integrated tools, durable context, and a production-style API plus operator UI.
+Multi-agent planning with integrated tools, durable context, and a production-style API plus operator UI.
