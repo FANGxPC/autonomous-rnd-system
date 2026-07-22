@@ -99,8 +99,8 @@
     if (!pastRunsList) return;
 
     // 1️⃣ Instantly show localStorage entries while Firebase loads
-    const local = loadRunHistory();
-    _renderRunEntries(local, local.length ? "⚡ cached" : null);
+    const cachedRuns = loadRunHistory();
+    _renderRunEntries(cachedRuns, cachedRuns.length ? "⚡ cached" : null);
 
     // 2️⃣ Loading indicator
     const loader = document.createElement("div");
@@ -134,7 +134,7 @@
 
       // Build a map: projectKey → richest localStorage entry
       const localRich = {};
-      local.forEach(e => {
+      cachedRuns.forEach(e => {
         if (_isRich(e.body)) {
           // Keep the most recent rich entry per project key
           if (!localRich[e.projectKey] ||
@@ -154,7 +154,7 @@
 
       // Add any local-only entries (project keys not in Firebase at all)
       const fbKeys = new Set(fbRuns.map(r => r.projectKey));
-      local.forEach(e => {
+      cachedRuns.forEach(e => {
         if (!fbKeys.has(e.projectKey)) enriched.push(e);
       });
 
@@ -164,7 +164,7 @@
       if (enriched.length > 0) {
         _renderRunEntries(enriched, "🔥 Firebase");
       } else {
-        _renderRunEntries(local, local.length ? "⚡ cached (offline)" : null);
+        _renderRunEntries(cachedRuns, cachedRuns.length ? "⚡ cached (offline)" : null);
       }
     } catch (err) {
       loader.remove();
@@ -244,7 +244,7 @@
     teamToggle.addEventListener("change", () => {
       const isVisible = teamToggle.checked;
       teamConfigBody.classList.toggle("hidden", !isVisible);
-      
+
       // Redraw workflow links after layout shift
       setTimeout(drawWorkflowLinks, 100);
       setTimeout(drawWorkflowLinks, 500); // After transition finishes
@@ -323,7 +323,7 @@
     drawCurve(getCenter(nodes.parse), getCenter(nodes.orchestrate), "link-2");
     drawCurve(getCenter(nodes.orchestrate), getCenter(nodes.research), "link-3");
     drawCurve(getCenter(nodes.orchestrate), getCenter(nodes.architect), "link-4");
-    
+
     // Links to Synthesize (ensure these IDs exist in index.html)
     drawCurve(getCenter(nodes.research), getCenter(nodes.synthesize), "link-5");
     drawCurve(getCenter(nodes.architect), getCenter(nodes.synthesize), "link-6");
@@ -359,19 +359,19 @@
     await step("receive", "link-1", 2000, "Intercepting incoming mission parameters...", "sys");
     await step("parse", "link-2", 3000, "NLP Engine parsing intent and extracting scope.", "sys");
     await step("orchestrate", "link-3", 4000, "Allocating tasks to specialized agent network.", "orchestrator");
-    
+
     // Activate incoming link to Tech Lead in parallel with link-3 which was for Research
     document.getElementById("link-4")?.classList.add("active");
-    
+
     // Core processing steps (parallel animation)
     const research = step("research", "link-5", 6000, "Scraping technical docs and competitive data...", "research");
     const architect = step("architect", "link-6", 6000, "Drafting system architecture and verifying constraints...", "tech_lead");
-    
+
     await Promise.all([research, architect]);
 
     // Final synthesis stage
     await step("synthesize", null, 4000, "Synthesizing all agent outputs into final artifacts.", "orchestrator");
-    
+
     if (pipelinePromise) {
       addLog("Synchronizing with neural core... finalizing agent outputs.", "sys");
       await pipelinePromise;
@@ -499,7 +499,7 @@
           // Save to history (optional, but good for tracking)
           saveRunToHistory(project_key, body);
           renderPastRuns();
-          
+
           await workflowAnimation;
           setAgentThinkingVisible(false);
           showResultsView(body, project_key);
