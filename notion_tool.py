@@ -335,10 +335,10 @@ def _sources_to_blocks(sources: str) -> list[dict[str, Any]]:
 
 
 def _append_blocks_batched(parent_block_id: str, blocks: list[dict[str, Any]]) -> None:
-    for i in range(0, len(blocks), 100):
+    for batchIndex in range(0, len(blocks), 100):
         _notion.blocks.children.append(
             block_id=parent_block_id,
-            children=blocks[i : i + 100],
+            children=blocks[batchIndex : batchIndex + 100],
         )
 
 

@@ -36,8 +36,8 @@ def _spread_dates_inclusive(start: date, end: date, n: int) -> list[date]:
     if n == 1:
         return [end]
     out: list[date] = []
-    for i in range(n):
-        off = int(round(i * span / (n - 1)))
+    for dayOffset in range(n):
+        off = int(round(dayOffset * span / (n - 1)))
         out.append(start + timedelta(days=min(off, span)))
     return out
 

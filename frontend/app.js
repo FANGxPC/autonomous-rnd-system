@@ -257,11 +257,11 @@
     numTeammatesInput.value = count;
     teamMembersContainer.innerHTML = "";
 
-    for (let i = 0; i < count; i++) {
+    for (let memberIndex = 0; memberIndex < count; memberIndex++) {
       const row = document.createElement("div");
       row.className = "member-row";
       row.innerHTML = `
-        <span class="member-index">#${i + 1}</span>
+        <span class="member-index">#${memberIndex + 1}</span>
         <input type="text" class="form-input member-name" placeholder="Name" />
         <input type="text" class="form-input member-role" placeholder="Role (e.g. Backend)" />
         <input type="email" class="form-input member-email" placeholder="Email (for calendar)" style="grid-column: 1 / -1;" />
@@ -314,8 +314,8 @@
       const path = document.getElementById(id);
       if (!path) return;
       const midX = (start.x + end.x) / 2;
-      const d = `M ${start.right} ${start.y} C ${midX} ${start.y}, ${midX} ${end.y}, ${end.left} ${end.y}`;
-      path.setAttribute("d", d);
+      const svgPath = `M ${start.right} ${start.y} C ${midX} ${start.y}, ${midX} ${end.y}, ${end.left} ${end.y}`;
+      path.setAttribute("d", svgPath);
     };
 
     // Connections
@@ -384,9 +384,9 @@
   }
 
   function escapeHtml(s) {
-    const d = document.createElement("div");
-    d.textContent = s;
-    return d.innerHTML;
+    const tempDiv = document.createElement("div");
+    tempDiv.textContent = s;
+    return tempDiv.innerHTML;
   }
 
   // --- Initializers ---
@@ -397,11 +397,11 @@
 
   const deadlineEl = document.getElementById("deadline");
   if (deadlineEl) {
-    const d = new Date();
-    const min = d.toISOString().split('T')[0];
+    const today = new Date();
+    const min = today.toISOString().split('T')[0];
     deadlineEl.setAttribute("min", min);
-    d.setDate(d.getDate() + 14);
-    deadlineEl.value = d.toISOString().split('T')[0];
+    today.setDate(today.getDate() + 14);
+    deadlineEl.value = today.toISOString().split('T')[0];
   }
 
   // --- Event Listeners ---
