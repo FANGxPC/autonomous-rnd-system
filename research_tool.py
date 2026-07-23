@@ -104,13 +104,13 @@ def search_web_snippets(query: str, max_results: int | None = None) -> str:
         )
 
     lines: list[str] = [f"🌐 Web results ({len(hits)}) for: {q}\n"]
-    for i, h in enumerate(hits, 1):
+    for resultIndex, h in enumerate(hits, 1):
         title = (h.get("title") or "Untitled").strip()
         href = (h.get("href") or h.get("url") or "").strip()
         body = (h.get("body") or h.get("snippet") or "").strip()
         if len(body) > 400:
             body = body[:397] + "…"
-        lines.append(f"{i}. **{title}**")
+        lines.append(f"{resultIndex}. **{title}**")
         if href:
             lines.append(f"   URL: {href}")
         if body:
@@ -180,7 +180,7 @@ def search_arxiv(query: str, max_results: int | None = None) -> str:
         return f"No arXiv papers found for query: {q!r}"
 
     lines: list[str] = [f"📚 arXiv results ({len(entries)} papers) for: {q}\n"]
-    for i, ent in enumerate(entries, 1):
+    for resultIndex, ent in enumerate(entries, 1):
         title = _text(ent.find(f"{_ATOM}title"))
         aid = _text(ent.find(f"{_ATOM}id"))
         published = _text(ent.find(f"{_ATOM}published"))[:10]

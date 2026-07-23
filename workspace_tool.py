@@ -49,7 +49,7 @@ def prepare_project_workspace(project_name: str, short_summary: str = "", num_te
         # Create per-user folders fallback to num_teammates if needed
         members_to_create = team_members or []
         if not members_to_create and num_teammates > 0:
-            members_to_create = [{"name": f"Teammate {i+1}", "role": "Developer"} for i in range(num_teammates)]
+            members_to_create = [{"name": f"Teammate {memberNumber+1}", "role": "Developer"} for memberNumber in range(num_teammates)]
             
         if members_to_create:
             for member in members_to_create:
