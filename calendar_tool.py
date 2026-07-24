@@ -96,8 +96,8 @@ def spread_task_dates(plan_end_date: str, num_tasks: int) -> str:
             "(Plan end was before today — using a 14-day forward window from today for spacing.)"
         )
     lines.append("Use **in order** for your tasks (earlier tasks → earlier dates):")
-    for i, d in enumerate(dates, 1):
-        lines.append(f"  {i}. {d.isoformat()}")
+    for task_number, task_date in enumerate(dates, 1):
+        lines.append(f"  {task_number}. {task_date.isoformat()}")
     lines.append(
         "For each row: **create_calendar_block** (`date` = that ISO day, `duration_hours=2`, **start_hour** "
         "by task index: 1→10, 2→14, 3→16, 4→11, 5→15, 6→9, 7→17, 8→13, then repeat). "
@@ -205,13 +205,13 @@ def create_calendar_block(
             target_calendar_id = (
                 calendar_email.strip() if calendar_email and calendar_email.strip() else CALENDAR_ID
             )
-        day = datetime.strptime(date, "%Y-%m-%d").date()
+        target_day = datetime.strptime(date, "%Y-%m-%d").date()
         event = _build_deep_work_event(
-            task_title, day, start_hour, duration_hours, description, attendees=attendees
+            task_title, target_day, start_hour, duration_hours, description, attendees=attendees
         )
 
         # Cleanup logic: Look for existing event with the same title around the time window
-        base = datetime(day.year, day.month, day.day, tzinfo=IST)
+        base = datetime(target_day.year, target_day.month, target_day.day, tzinfo=IST)
         day_start = (base - timedelta(days=14)).isoformat()
         day_end = (base + timedelta(days=14)).isoformat()
         
