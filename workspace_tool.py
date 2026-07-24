@@ -49,21 +49,21 @@ def prepare_project_workspace(project_name: str, short_summary: str = "", num_te
         # Create per-user folders fallback to num_teammates if needed
         members_to_create = team_members or []
         if not members_to_create and num_teammates > 0:
-            members_to_create = [{"name": f"Teammate {memberNumber+1}", "role": "Developer"} for memberNumber in range(num_teammates)]
+            members_to_create = [{"name": f"Teammate {member_index+1}", "role": "Developer"} for member_index in range(num_teammates)]
             
         if members_to_create:
             for member in members_to_create:
-                m_name = _slug(member.get("name", "teammate"))
-                m_dir = base / m_name
-                m_dir.mkdir(exist_ok=True)
+                member_slug = _slug(member.get("name", "teammate"))
+                member_dir = base / member_slug
+                member_dir.mkdir(exist_ok=True)
                 
-                m_role = member.get("role", "Developer").lower()
-                m_readme = m_dir / "README.md"
-                m_readme_content = f"# {member.get('name', 'Teammate')} Workspace\n\nRole: {member.get('role', 'Developer')}\n\nPersonal workspace for {name}.\n"
-                m_readme.write_text(m_readme_content, encoding="utf-8")
+                member_role = member.get("role", "Developer").lower()
+                member_readme = member_dir / "README.md"
+                member_readme_content = f"# {member.get('name', 'Teammate')} Workspace\n\nRole: {member.get('role', 'Developer')}\n\nPersonal workspace for {name}.\n"
+                member_readme.write_text(member_readme_content, encoding="utf-8")
                 
                 # Generic text file for their notes
-                (m_dir / "notes.md").write_text("# Notes\n\n- Start adding your thoughts here.\n", encoding="utf-8")
+                (member_dir / "notes.md").write_text("# Notes\n\n- Start adding your thoughts here.\n", encoding="utf-8")
 
     except OSError as e:
         return f"❌ Workspace: could not create directories: {e}"
@@ -82,8 +82,8 @@ def prepare_project_workspace(project_name: str, short_summary: str = "", num_te
     if members_to_create:
         body += "\n## Team Workspaces\n\n"
         for member in members_to_create:
-            m_name = _slug(member.get("name", "teammate"))
-            body += f"- `{m_name}/` — workspace for {member.get('name', 'Team Member')} ({member.get('role', 'Developer')})\n"
+            member_slug = _slug(member.get("name", "teammate"))
+            body += f"- `{member_slug}/` — workspace for {member.get('name', 'Team Member')} ({member.get('role', 'Developer')})\n"
 
     body += "\nGenerated automatically; safe to edit or delete.\n"
     

@@ -89,16 +89,16 @@ class RefineRequest(BaseModel):
 
 
 def _user_message(req: TriggerRequest) -> str:
-    team_info = ""
+    team_summary = ""
     if req.team_members:
-        team_info = "Team Members provided via API:\n" + "\n".join([f"- Name: {m.name}, Role: {m.role}, Email: {m.email}" for m in req.team_members]) + "\n\n"
+        team_summary = "Team Members provided via API:\n" + "\n".join([f"- Name: {member.name}, Role: {member.role}, Email: {member.email}" for member in req.team_members]) + "\n\n"
     elif req.num_teammates > 0:
-        team_info = f"Team size provided via API: {req.num_teammates} teammates.\n\n"
+        team_summary = f"Team size provided via API: {req.num_teammates} teammates.\n\n"
 
     base = (
         f"project_key: {req.project_key}\n"
         f"deadline: {req.deadline}\n\n"
-        f"{team_info}"
+        f"{team_summary}"
         f"User request:\n{req.prompt}\n\n"
         "Use the memory tools with the given project_key. "
     )
@@ -258,18 +258,18 @@ def _extract_calendar_event_links(
     """Collect Google Calendar event URLs from tool output and final summary."""
     seen: set[str] = set()
     ordered: list[str] = []
-    for ev in events:
-        for s in _strings_from_model_event(ev):
-            for m in _CALENDAR_EVENT_URL_RE.finditer(s):
-                u = _clean_calendar_href(m.group(0))
-                if u not in seen:
-                    seen.add(u)
-                    ordered.append(u)
-    for m in _CALENDAR_EVENT_URL_RE.finditer(outcome_text or ""):
-        u = _clean_calendar_href(m.group(0))
-        if u not in seen:
-            seen.add(u)
-            ordered.append(u)
+    for event in events:
+        for message_text in _strings_from_model_event(event):
+            for url_match in _CALENDAR_EVENT_URL_RE.finditer(message_text):
+                calendar_url = _clean_calendar_href(url_match.group(0))
+                if calendar_url not in seen:
+                    seen.add(calendar_url)
+                    ordered.append(calendar_url)
+    for url_match in _CALENDAR_EVENT_URL_RE.finditer(outcome_text or ""):
+        calendar_url = _clean_calendar_href(url_match.group(0))
+        if calendar_url not in seen:
+            seen.add(calendar_url)
+            ordered.append(calendar_url)
     return ordered
 
 
@@ -480,16 +480,16 @@ async def trigger_pipeline(request: TriggerRequest):
                     events.append(event)
                     _log_event(event)
 
-                guard_i = 0
+                notion_guard_count = 0
                 while (
                     notion_run
                     and not _pipeline_created_notion_cards(events)
-                    and guard_i < _NOTION_GUARD_MAX_NUDGES
+                    and notion_guard_count < _NOTION_GUARD_MAX_NUDGES
                 ):
-                    guard_i += 1
+                    notion_guard_count += 1
                     console.print(
                         "[yellow]Notion guard: no create_kanban_card yet — "
-                        f"nudging Tech Lead ({guard_i}/{_NOTION_GUARD_MAX_NUDGES})[/yellow]"
+                        f"nudging Tech Lead ({notion_guard_count}/{_NOTION_GUARD_MAX_NUDGES})[/yellow]"
                     )
                     nudge = (
                         "System reminder (pipeline guard): A Notion run workspace is active for this "
@@ -534,7 +534,7 @@ async def trigger_pipeline(request: TriggerRequest):
                         **meta_out,
                         "notion_guard_warning": (
                             "Per-run Notion workspace was opened but no create_kanban_card ran "
-                            f"after {guard_i} guard nudge(s). Check Scrum/Calendar tools and logs."
+                            f"after {notion_guard_count} guard nudge(s). Check Scrum/Calendar tools and logs."
                         ),
                     }
 

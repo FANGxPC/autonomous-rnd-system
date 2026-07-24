@@ -102,12 +102,12 @@ def main() -> None:
             file=sys.stderr,
         )
 
-    payload = {
+    token_payload = {
         "token": creds.token,
         "refresh_token": creds.refresh_token,
     }
-    with open(TOKEN_PATH, "w", encoding="utf-8") as f:
-        json.dump(payload, f, indent=2)
+    with open(TOKEN_PATH, "w", encoding="utf-8") as token_file:
+        json.dump(token_payload, token_file, indent=2)
 
     print(f"Saved OAuth token to {TOKEN_PATH}")
     print("You can run: python calendar_tool.py  or  python test_member2.py")

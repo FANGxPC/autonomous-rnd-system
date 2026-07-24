@@ -89,26 +89,26 @@ def retrieve_context(project_key: str, category: str = None) -> str:
     Otherwise → all categories for the project.
     """
     try:
-        query = db.collection("project_memory").where(
+        memory_query = db.collection("project_memory").where(
             filter=FieldFilter("project_key", "==", project_key)
         )
         if category:
-            query = query.where(filter=FieldFilter("category", "==", category))
+            memory_query = memory_query.where(filter=FieldFilter("category", "==", category))
 
-        snapshots = list(query.stream())
-        snapshots.sort(
-            key=lambda d: (d.to_dict() or {}).get("timestamp") or "",
+        memory_docs = list(memory_query.stream())
+        memory_docs.sort(
+            key=lambda doc: (doc.to_dict() or {}).get("timestamp") or "",
             reverse=True,
         )
-        results = snapshots
-        if not results:
+        memory_entries = memory_docs
+        if not memory_entries:
             return f"No memory found for project: {project_key}"
         
         output = f"📖 FIRESTORE MEMORY FOR: {project_key}\n"
         output += "=" * 60 + "\n"
         
-        for doc in results:
-            data = doc.to_dict() or {}
+        for memory_doc in memory_entries:
+            data = memory_doc.to_dict() or {}
             ts = (data.get("timestamp") or "")[:19]
             cat = (data.get("category") or "").upper()
             val = data.get("value", "")
@@ -392,8 +392,8 @@ def load_project_registry():
     if not os.path.exists(PROJECTS_FILE):
         return []
 
-    with open(PROJECTS_FILE, "r") as f:
-        return json.load(f)
+    with open(PROJECTS_FILE, "r") as registry_file:
+        return json.load(registry_file)
 
 
 def save_project_registry(project_key):
@@ -405,13 +405,13 @@ def save_project_registry(project_key):
 
     if os.path.exists(PROJECTS_FILE):
 
-        with open(PROJECTS_FILE, "r") as f:
-            projects = json.load(f)
+        with open(PROJECTS_FILE, "r") as registry_file:
+            projects = json.load(registry_file)
 
     if project_key not in projects:
 
         projects.append(project_key)
 
-        with open(PROJECTS_FILE, "w") as f:
-            json.dump(projects, f, indent=2)
+        with open(PROJECTS_FILE, "w") as registry_file:
+            json.dump(projects, registry_file, indent=2)
 
