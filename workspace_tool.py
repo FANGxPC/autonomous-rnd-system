@@ -12,7 +12,15 @@ from pathlib import Path
 global_workspace_urls: dict[str, str] = {}
 
 
-def _slug(name: str) -> str:
+def _slug(name: str | None) -> str:
+    """Sanitize and format a string into a filesystem-safe directory slug.
+
+    Args:
+        name: Name string to be converted into a slug.
+
+    Returns:
+        Cleaned slug string truncated to a maximum of 80 characters.
+    """
     s = re.sub(r"[^\w\s\-]+", "", (name or "").strip())
     s = re.sub(r"\s+", "_", s)[:80]
     return s or "project"
