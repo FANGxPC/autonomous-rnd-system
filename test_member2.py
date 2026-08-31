@@ -1,7 +1,4 @@
-"""
-Member 2 deliverable test:
-Proves the ADK agent can physically create a Kanban card AND a Calendar block.
-"""
+
 
 import asyncio
 from datetime import datetime

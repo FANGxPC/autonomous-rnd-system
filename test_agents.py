@@ -30,9 +30,7 @@ async def main():
         user_id="test_user",
     )
 
-    # -------------------------
-    # SHOW PROJECTS
-    # -------------------------
+  
 
     projects = list_projects()
 
@@ -54,9 +52,6 @@ async def main():
 
     choice = input("Enter choice: ")
 
-    # -------------------------
-    # NEW PROJECT
-    # -------------------------
 
     if choice == "1":
 
