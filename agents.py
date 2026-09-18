@@ -19,9 +19,9 @@ ADK_MODEL = os.getenv("ADK_MODEL", "gemini-2.5-flash")
 ADK_LITE = True
 
 
-# ----------------------------
+
 # Research Agent
-# ----------------------------
+
 
 research_agent = Agent(
     name="research_agent",
@@ -41,9 +41,9 @@ Keep output concise bullet points only.
 )
 
 
-# ----------------------------
+
 # Scrum Master Agent
-# ----------------------------
+
 
 scrum_master_agent = Agent(
     name="scrum_master_agent",
@@ -97,9 +97,9 @@ Use status 'To Do' for all new tasks.
 )
 
 
-# ----------------------------
-# Workspace Prep Agent (REAL)
-# ----------------------------
+
+# Workspace Prep Agent 
+
 
 workspace_prep_agent = Agent(
     name="workspace_prep_agent",
@@ -120,9 +120,8 @@ Do not invent paths.
 )
 
 
-# ----------------------------
+
 # Tech Lead Agent (Main)
-# ----------------------------
 
 tech_lead_agent = Agent(
     name="tech_lead_agent",
